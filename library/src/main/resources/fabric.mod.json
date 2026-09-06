@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "viarp-library",
+  "version": "${version}",
+  "name": "ViaResourcePack Library",
+  "description": "Bundled ResourcePackConverter (MIT) with relocated gson and zip4j, used by ViaResourcePack to convert resource packs between versions.",
+  "authors": [
+    "Dainsleif"
+  ],
+  "contributors": [
+    "agentdid127 (ResourcePackConverter)"
+  ],
+  "contact": {
+    "sources": "https://github.com/Dainsleif233/ViaResourcePack"
+  },
+  "license": "GPL-3.0-or-later",
+  "environment": "client",
+  "depends": {
+    "viarp": "*"
+  }
+}

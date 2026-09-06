@@ -1,0 +1,57 @@
+## 依赖版本单一数据源。
+##
+## 只放"与 MC 版本无关"的依赖。与 MC 版本相关的矩阵数据（是否混淆、Java 目标、
+## 启用哪些 hook）在 `gradle/adapters.toml`。
+
+[versions]
+# 编译 core 与所有适配器所用的 Fabric Loader。
+fabric-loader = "0.19.3"
+# fabric.mod.json 里声明的最低 Loader 版本。压到 0.15.0 是为了让 1.14.4 – 1.20 的
+# 老整合包也能装：那些环境里的 Loader 往往远低于我们的编译版本，而我们只用了
+# `FabricLoader.getGameDir()` 与 ClientModInitializer 这两个自古就有的 API。
+fabric-loader-min = "0.15.0"
+# 混淆路径（1.14.4 – 1.21.11）：由 Loom 走 modRuntimeOnly 重映射。
+mixinextras = "0.3.5"
+# 非混淆路径（26.1+）：无重映射，且需要显式带上 sponge-mixin
+# （它打进 fabric-loader 的 jar 里，不在其 POM 里）。
+mixinextras-plain = "0.5.4"
+sponge-mixin = "0.17.3+mixin.0.8.7"
+
+# ResourcePackConverter（MIT）——真正干转换活的库，jar-in-jar 嵌进主 jar。
+#
+# 用 JitPack 的提交快照而不是 tag `2.2.6`：2.2.6 的转换器只到 pack_format 64（1.21.8），
+# 而这个提交补齐了 1.21.10（69）与 1.21.11（75）。目前 MC 侧只剩 26.1（84）/ 26.2（88）
+# 落在覆盖范围外，会被夹到 75（= 1.21.11）——见 docs/DESIGN.md §3.3。
+rpc = "63ba2cd402"
+# RPC 的传递依赖。必须 shade + relocate：RPC 用了 gson 2.11 才有的
+# `com.google.gson.Strictness`，而 MC 1.14.4 只带 gson 2.8.0。
+gson = "2.11.0"
+zip4j = "2.11.3"
+
+# core 编译期需要（MC 自带，运行期不打包）
+slf4j = "2.0.18"
+
+# 测试
+junit = "5.10.2"
+junit-platform = "1.10.2"
+assertj = "3.25.3"
+
+[libraries]
+fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
+mixinextras-fabric = { module = "io.github.llamalad7:mixinextras-fabric", version.ref = "mixinextras" }
+mixinextras-fabric-plain = { module = "io.github.llamalad7:mixinextras-fabric", version.ref = "mixinextras-plain" }
+sponge-mixin = { module = "net.fabricmc:sponge-mixin", version.ref = "sponge-mixin" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+
+rpc-library = { module = "com.github.agentdid127.ResourcePackConverter:Library", version.ref = "rpc" }
+rpc-forwards = { module = "com.github.agentdid127.ResourcePackConverter:Forwards", version.ref = "rpc" }
+rpc-backwards = { module = "com.github.agentdid127.ResourcePackConverter:Backwards", version.ref = "rpc" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
+zip4j = { module = "net.lingala.zip4j:zip4j", version.ref = "zip4j" }
+
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit-platform" }
+assertj-core = { module = "org.assertj:assertj-core", version.ref = "assertj" }
+
+[plugins]
+shadow = { id = "com.gradleup.shadow", version = "9.2.2" }

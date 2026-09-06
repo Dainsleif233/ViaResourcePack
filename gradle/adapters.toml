@@ -1,0 +1,81 @@
+## 版本矩阵单一数据源。
+##
+## 消费者：
+##   - `settings.gradle.kts`              —— 决定包含哪些适配器子项目
+##   - `buildSrc` 的 `viarp.mc.adapter`   —— 每个适配器的 Java 目标、共享源码目录、mixin 组合
+##   - 根 `build.gradle.kts`              —— universal 打包时每个适配器的产物任务名
+##   - `:validateAdapterMatrix`           —— 校验本文件与磁盘一致 + 模拟 Loader 选择
+##
+## 约定：
+##   - `version` 必须等于 `adapters/mc/<version>/` 目录名，也是该适配器族支持的**最低**
+##     版本；Fabric Loader 靠 `depends.minecraft = ">=version"` + 同 id 取最高版本
+##     来选出唯一适配器，因此这里的顺序即优先级。
+##   - `covers` 只是文档字段（该族实际覆盖到哪个版本），构建不消费。
+##   - `obfuscated = false` 表示该 MC 版本没有 ProGuard 混淆（26.1+），构建用
+##     `fabric-loom` + `jar`，而不是 `fabric-loom-remap` + `remapJar`，
+##     且 `officialMojangMappings()` 不可用。
+##   - `java` 是该族编译目标与 mixin compatibilityLevel 的 Java 版本，取该 MC 区间的
+##     最低 JRE 要求。
+##   - `localHook` / `serverHook` 与 `adapters/shared/<local|server>/<hook>/` 目录一一对应；
+##     各族的拦截点差异见 `docs/DESIGN.md` §1。
+##
+## 本项目不依赖 Fabric API：只用 fabric-loader + minecraft + mixin。
+##
+## 解析器只支持这里用到的 TOML 子集（`[[表]]` + 引号字符串 / 布尔 / 整数），
+## 见 `buildSrc/src/main/kotlin/viarp/build/Toml.kt`。
+
+[[mc]]
+version = "1.14.4"
+covers = "1.14.4 - 1.15.2"
+obfuscated = true
+java = 8
+localHook = "createSupplier"
+serverHook = "setServerPack"
+
+[[mc]]
+version = "1.16"
+covers = "1.16 - 1.19.2"
+obfuscated = true
+java = 8
+localHook = "createSupplier"
+serverHook = "setServerPack"
+
+[[mc]]
+version = "1.19.3"
+covers = "1.19.3 - 1.20.1"
+obfuscated = true
+java = 17
+localHook = "folderDetector"
+serverHook = "setServerPackDownloaded"
+
+[[mc]]
+version = "1.20.2"
+covers = "1.20.2"
+obfuscated = true
+java = 17
+localHook = "packDetector"
+serverHook = "setServerPackDownloaded"
+
+[[mc]]
+version = "1.20.3"
+covers = "1.20.3 - 1.20.4"
+obfuscated = true
+java = 17
+localHook = "packDetector"
+serverHook = "loadRequestedPacks"
+
+[[mc]]
+version = "1.20.5"
+covers = "1.20.5 - 1.21.11"
+obfuscated = true
+java = 21
+localHook = "packDetector"
+serverHook = "loadRequestedPacks"
+
+[[mc]]
+version = "26.1"
+covers = "26.1 - 26.2"
+obfuscated = false
+java = 25
+localHook = "packDetector"
+serverHook = "loadRequestedPacks"

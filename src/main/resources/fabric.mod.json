@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "viarp",
+  "version": "${version}",
+  "name": "ViaResourcePack",
+  "description": "Automatically converts resource packs to the running Minecraft version when they are loaded, for both local packs and server-sent packs.",
+  "authors": [
+    "Dainsleif"
+  ],
+  "contact": {
+    "sources": "https://github.com/Dainsleif233/ViaResourcePack",
+    "issues": "https://github.com/Dainsleif233/ViaResourcePack/issues"
+  },
+  "license": "GPL-3.0-or-later",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "top.syshub.viarp.ViaRpClient"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.0",
+    "minecraft": ">=1.14.4",
+    "viarp-adapter-mc": "*",
+    "viarp-library": "*"
+  }
+}
