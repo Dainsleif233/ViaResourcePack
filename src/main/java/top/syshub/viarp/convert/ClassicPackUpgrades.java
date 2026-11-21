@@ -121,7 +121,7 @@ final class ClassicPackUpgrades {
                 warnFile(workspace, 14, "assets/realms/textures/gui/realms/invite_icon.png", "Realms 邀请图块布局已变化，需人工调整坐标");
                 break;
             case 15:
-                warnLegacyFonts(workspace);
+                ClassicUnicodeFonts.apply(workspace);
                 warnFile(workspace, 15, VANILLA + "texts/credits.json", "旧版 credits 的 titles 层级及页面呈现需核对 disciplines");
                 break;
             case 16:
@@ -659,26 +659,6 @@ final class ClassicPackUpgrades {
             }
         }
         warn(workspace, 13, glint, "保留原光效，并仅填充未提供的新光效位置；新版物品与实体混合效果可能不同");
-    }
-
-    private static void warnLegacyFonts(UpgradeWorkspace workspace) throws IOException {
-        for (String file : workspace.files()) {
-            if (file.equals(VANILLA + "font/glyph_sizes.bin")
-                    || file.matches("assets/[^/]+/textures/font/unicode_page_[0-9a-fA-F]{2}\\.png")) {
-                warn(workspace, 15, file, "旧字形像素和宽度不能用 type 改名转为 unihex；保留原文件");
-            } else if (isAsset(file, "/font/", ".json")) {
-                Map<String, Object> font = readObject(workspace, 15, file);
-                if (font != null && font.get("providers") instanceof List) {
-                    for (Object value : (List<?>) font.get("providers")) {
-                        Map<String, Object> provider = object(value);
-                        if (provider != null && ("legacy_unicode".equals(provider.get("type"))
-                                || "minecraft:legacy_unicode".equals(provider.get("type")))) {
-                            warn(workspace, 15, file, "legacy_unicode 已移除；保留原 provider，请转写为 unihex/其他字体提供器");
-                        }
-                    }
-                }
-            }
-        }
     }
 
     private static void upgradeGui(UpgradeWorkspace workspace) throws IOException {

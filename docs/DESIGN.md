@@ -190,7 +190,7 @@ mixin 源码不放在各适配器目录下，而是集中在 `adapters/shared/{c
 3. 逐个经过目标节点：旧纹理、经典、过渡、现代规则分别处理已验证的改名、JSON 或图像变换。没有迁移规则的节点不修改素材。无法确认对应关系的素材尽量保留并报告已检测到的问题。
 4. 最后写入目标声明：旧格式用 `pack_format`，现代格式用精确的 `min_format`、`max_format` 数组。工作树失败不发布产物，回退原路径。
 
-规则证据见 [旧纹理](research/legacy-texture-packs.md)、[旧图集共享坐标](research/legacy-atlas-expansion.md)、[经典格式](research/classic-pack-formats.md)、[经典实体纹理](research/classic-entity-textures.md)、[经典声音](research/classic-sounds.md)、[经典方块状态](research/classic-blockstates.md)、[现代格式](research/modern-pack-formats.md)。新增会改变产物的规则时，更新 `ResourcePackUpgrader.RULES_VERSION`。
+规则证据见 [旧纹理](research/legacy-texture-packs.md)、[旧图集共享坐标](research/legacy-atlas-expansion.md)、[经典格式](research/classic-pack-formats.md)、[经典实体纹理](research/classic-entity-textures.md)、[经典声音](research/classic-sounds.md)、[经典方块状态](research/classic-blockstates.md)、[旧 Unicode 字体](research/classic-unicode-fonts.md)、[现代格式](research/modern-pack-formats.md)。新增会改变产物的规则时，更新 `ResourcePackUpgrader.RULES_VERSION`。
 
 ## 4. 缓存
 

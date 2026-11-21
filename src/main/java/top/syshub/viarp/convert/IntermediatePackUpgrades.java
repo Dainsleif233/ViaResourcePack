@@ -77,7 +77,7 @@ final class IntermediatePackUpgrades {
                 // 24w03a (07a9fef3a)：旧海龟鳞甲改 ID；与新增的 armadillo_scute 无关。
                 renameVanillaResource(workspace, 24, "scute", "turtle_scute", false);
                 warnAssets(workspace, 24, "TTF 度量与变换有变化，请复核字体回退和位移，保留定义",
-                        "/font/", ".ttf", ".otf");
+                        ".ttf", ".otf");
                 break;
             case 25:
                 // 24w04a 移除 IViewRotMat，不能按名字替代坐标空间。
