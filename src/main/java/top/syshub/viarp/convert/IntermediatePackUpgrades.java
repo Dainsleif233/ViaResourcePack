@@ -109,8 +109,7 @@ final class IntermediatePackUpgrades {
                         { "entity/pig/pig_saddle", "entity/equipment/pig_saddle/saddle" },
                         { "entity/strider/strider_saddle", "entity/equipment/strider_saddle/saddle" }
                 });
-                warnAssets(workspace, 48, "新版部分坐骑把马鞍拆成独立装备层；只移动了独立猪/炽足兽马鞍，其他贴图保留",
-                        "/textures/entity/horse/", "/textures/entity/camel/");
+                MountSaddleUpgrades.apply(workspace);
                 break;
             case 52:
                 // 25w07a (02027c155)：post pass 从 program 析为独立 vertex_shader/fragment_shader。
