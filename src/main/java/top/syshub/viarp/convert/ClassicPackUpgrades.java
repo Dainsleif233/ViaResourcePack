@@ -61,9 +61,6 @@ final class ClassicPackUpgrades {
             "items/record_13", "item/music_disc_13",
             "items/dye_powder_red", "item/red_dye",
             "item/rose_red", "item/red_dye");
-    private static final Map<String, String> FLAT_MODELS = pairs(
-            "block/grass", "block/grass_block",
-            "block/grass_snowed", "block/grass_block_snow");
     private static final String FLAT_LANG_TABLE = "/viarp/migrations/classic/format-4-language.tsv";
     private static final String EARLY_TEXTURE_TABLE = "/viarp/migrations/classic/format-2-early-textures.tsv";
     private static final Map<String, String> PATH_TEXTURES = pairs(
@@ -295,6 +292,7 @@ final class ClassicPackUpgrades {
     }
 
     private static void flatten(UpgradeWorkspace workspace) throws IOException {
+        ClassicBlockStates.apply(workspace);
         List<String> files = workspace.files();
         Set<String> original = new HashSet<String>(files);
         Map<String, String> changes = new LinkedHashMap<String, String>();
@@ -315,17 +313,13 @@ final class ClassicPackUpgrades {
             } else if (file.startsWith(VANILLA + "recipes/")) {
                 warn(workspace, 4, file, "配方已迁入世界数据包；保留原文件，不转换为数据包");
             } else if (file.startsWith(VANILLA + "blockstates/") && file.endsWith(".json")
-                    && (file.endsWith("/tallgrass.json") || file.endsWith("/planks.json")
-                        || file.endsWith("/wool.json") || file.endsWith("/stone.json")
-                        || file.endsWith("/log.json") || file.endsWith("/log2.json"))) {
+                    && (file.endsWith("/log.json") || file.endsWith("/log2.json"))) {
                 warn(workspace, 4, file, "旧状态包含多种目标方块；保留文件名和状态条件，不拆分变种");
             }
         }
-        schedule(changes, VANILLA + "models/", ".json", FLAT_MODELS);
-        schedule(changes, VANILLA + "blockstates/", ".json", pairs("grass", "grass_block"));
         workspace.moveFiles(changes);
         Map<String, String> language = readMappings(FLAT_LANG_TABLE, "[A-Za-z0-9_.-]+", "[a-z0-9_.-]+");
-        rewriteAssets(workspace, 4, id -> replaceVanilla(id, FLAT_MODELS),
+        rewriteAssets(workspace, 4, UnaryOperator.identity(),
                 id -> flattenTextureReference(workspace, id, textures),
                 id -> flattenStateModel(id, original), id -> language.getOrDefault(id, id), false);
         convertLanguages(workspace, language);
@@ -410,7 +404,7 @@ final class ClassicPackUpgrades {
                 path = "block/" + path;
             }
         }
-        return replaceVanilla(parsed.withPath(path), FLAT_MODELS);
+        return parsed.withPath(path);
     }
 
     private static void convertLanguages(UpgradeWorkspace workspace, Map<String, String> language) throws IOException {
@@ -702,7 +696,8 @@ final class ClassicPackUpgrades {
         Set<String> files = lowercaseSound ? new HashSet<String>(assets) : null;
         for (String file : assets) {
             boolean model = isAsset(file, "/models/", ".json");
-            boolean state = isAsset(file, "/blockstates/", ".json");
+            boolean state = isAsset(file, "/blockstates/", ".json")
+                    && (edge != 4 || !ClassicBlockStates.handles(file));
             boolean sound = file.startsWith("assets/") && file.equals("assets/" + namespace(file) + "/sounds.json");
             if (!model && !state && !sound) {
                 continue;
