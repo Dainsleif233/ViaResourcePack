@@ -123,7 +123,7 @@ final class IntermediatePackUpgrades {
                 });
                 break;
             case 60:
-                warnMobEffectsAtlas(workspace);
+                migrateMobEffectsAtlas(workspace);
                 break;
             default:
                 // 其余发布节点未确认本类能安全执行的迁移；不是完整的语义覆盖声明。
@@ -486,12 +486,69 @@ final class IntermediatePackUpgrades {
         }
     }
 
-    private static void warnMobEffectsAtlas(UpgradeWorkspace workspace) throws IOException {
-        for (String file : workspace.files()) {
-            if ((VANILLA + "atlases/mob_effects.json").equals(file)) {
-                warn(workspace, 60, file, "独立状态效果图集并入 GUI，PNG 仍在 textures/mob_effect；自定义 sources 需人工合并");
-            }
+    private static void migrateMobEffectsAtlas(UpgradeWorkspace workspace) throws IOException {
+        String old = VANILLA + "atlases/mob_effects.json";
+        String target = VANILLA + "atlases/gui.json";
+        if (!workspace.hasFile(old)) {
+            return;
         }
+        if (Files.exists(workspace.path(target), LinkOption.NOFOLLOW_LINKS)) {
+            warn(workspace, 60, old, "状态效果并入 GUI 图集；已有显式 GUI 定义，保留两份原件以供人工合并");
+            return;
+        }
+        Map<String, Object> atlas = readObject(workspace, 60, old);
+        if (atlas == null) {
+            return;
+        }
+        Object sources = atlas.get("sources");
+        if (atlas.size() != 1 || !(sources instanceof List)) {
+            warn(workspace, 60, old, "未知状态效果图集结构，保留原件以供人工合并");
+            return;
+        }
+        List<Object> migrated = new ArrayList<Object>();
+        for (Object source : (List<?>) sources) {
+            Map<String, Object> entry = migrateMobEffectsSource(object(source));
+            if (entry == null) {
+                // 过滤和未知源依赖此前的输出与顺序，不能只复制列表中的一部分。
+                warn(workspace, 60, old, "仅支持 directory 和 single 图集源；保留整个原件，不把旧过滤规则施加到 GUI");
+                return;
+            }
+            migrated.add(entry);
+        }
+        if (!migrated.isEmpty()) {
+            // c48962f90：GUI 查找时给效果 ID 的 path 加 mob_effect/，保留 namespace。
+            atlas.put("sources", migrated);
+            workspace.writeText(target, Json.write(atlas));
+        }
+    }
+
+    private static Map<String, Object> migrateMobEffectsSource(Map<String, Object> old) {
+        if (old == null) {
+            return null;
+        }
+        Object type = old.get("type");
+        Map<String, Object> entry = new LinkedHashMap<String, Object>(old);
+        if ("directory".equals(type) || "minecraft:directory".equals(type)) {
+            Object source = old.get("source");
+            Object prefix = old.get("prefix");
+            if (old.size() != 3 || !(source instanceof String) || !resourcePath((String) source)
+                    || !(prefix instanceof String) || !resourcePath(prefix + "atlas_probe")) {
+                return null;
+            }
+            entry.put("prefix", "mob_effect/" + prefix);
+        } else if ("single".equals(type) || "minecraft:single".equals(type)) {
+            Object resource = old.get("resource");
+            Object sprite = old.getOrDefault("sprite", resource);
+            if (old.size() != (old.containsKey("sprite") ? 3 : 2) || !resourceId(resource) || !resourceId(sprite)) {
+                return null;
+            }
+            String id = (String) sprite;
+            int colon = id.indexOf(':') + 1;
+            entry.put("sprite", id.substring(0, colon) + "mob_effect/" + id.substring(colon));
+        } else {
+            return null;
+        }
+        return entry;
     }
 
     private static void rewriteModelReferences(UpgradeWorkspace workspace, int format, Map<String, String> models,
