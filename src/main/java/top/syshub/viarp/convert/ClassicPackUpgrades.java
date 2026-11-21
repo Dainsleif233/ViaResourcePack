@@ -45,7 +45,6 @@ final class ClassicPackUpgrades {
 
     private static final String VANILLA = "assets/minecraft/";
     private static final String BLOCK_ATLAS = VANILLA + "atlases/blocks.json";
-    private static final String WIDGETS = VANILLA + "textures/gui/widgets.png";
     private static final String FLAT_TEXTURE_TABLE = "/viarp/migrations/classic/format-4-textures.tsv";
     // 这些别名另以原版模型或语言记录确认，不能用图像同一性筛掉正式版的重绘。
     private static final Map<String, String> FLAT_TEXTURE_EXCEPTIONS = pairs(
@@ -124,9 +123,6 @@ final class ClassicPackUpgrades {
                 break;
             case 16:
                 IntermediatePackUpgrades.splitGuiAtlas(workspace);
-                break;
-            case 17:
-                warnFile(workspace, 17, WIDGETS, "文本框和滚动条现在使用 widget/text_field{,_highlighted} 与 widget/scroller，未从旧纹理推测绘制");
                 break;
             default:
                 // 10 未发行；其余版本由其他迁移组负责。

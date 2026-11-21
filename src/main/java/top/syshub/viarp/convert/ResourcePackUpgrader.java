@@ -31,7 +31,7 @@ import top.syshub.viarp.pack.PackMetadata;
 final class ResourcePackUpgrader {
 
     // 改变产物内容或选择源视图的规则时递增；不得重用旧规则的产物。
-    static final String RULES_VERSION = "builtin-14";
+    static final String RULES_VERSION = "builtin-15";
 
     private ResourcePackUpgrader() {
     }
@@ -54,7 +54,12 @@ final class ResourcePackUpgrader {
         if (verbose) {
             ViaRpLog.debug("Resource pack migration route: {} -> {}", from, PackFormatHistory.route(from, target));
         }
+        // 同一旧滑杆在格式 16 与 17+ 的缺省尺寸不同，只按最终格式生成一次。
+        int widgetBoundary = Math.max(16, from.major() + 1);
         for (PackFormat entered : PackFormatHistory.route(from, target)) {
+            if (widgetBoundary <= 18 && entered.major() == widgetBoundary) {
+                ClassicWidgetDetails.apply(pack, target.major() >= 17);
+            }
             if (entered.equals(PackFormatHistory.LOOSE_TEXTURES)) {
                 LegacyTextureUpgrade.unstitch(pack);
             } else if (entered.major() == 1) {
