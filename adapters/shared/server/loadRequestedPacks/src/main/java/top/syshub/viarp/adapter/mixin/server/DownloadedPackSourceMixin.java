@@ -31,7 +31,7 @@ import net.minecraft.client.resources.server.PackReloadConfig;
 import top.syshub.viarp.adapter.ViaRpHooks;
 
 /**
- * MC 1.20.3 – 26.2 的服务器资源包拦截点。
+ * MC 1.20.3 – 26.3 的服务器资源包拦截点。
  *
  * <p>1.20.3 起服务器包改由 {@code ServerPackManager} + {@code DownloadQueue} 管理，
  * 而 {@code DownloadedPackSource.loadRequestedPacks(List&lt;IdAndPath&gt;)} 是
@@ -42,7 +42,7 @@ import top.syshub.viarp.adapter.ViaRpHooks;
  * 但一定会把该文件的路径塞进 {@code IdAndPath} 交到这个方法。因此新下载与缓存命中两条
  * 路径都被覆盖。单人世界的捆绑包（{@code pushLocalPack}）走的也是同一个方法。
  *
- * <p>该方法与 {@code IdAndPath} 的签名从 1.20.3 到 26.2 完全没变
+ * <p>该方法与 {@code IdAndPath} 的签名从 1.20.3 到 26.3 一致
  * （{@code (Ljava/util/List;)Ljava/util/List;}，记录只有 {@code id} / {@code path} 两个组件）。
  */
 @Mixin(DownloadedPackSource.class)

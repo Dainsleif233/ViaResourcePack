@@ -94,7 +94,7 @@ ClientCommonPacketListenerImpl.handleResourcePackPush
                  └─ new FilePackResources.FileResourcesSupplier(path)
 ```
 
-拦截 `loadRequestedPacks` 而不是 `pushPack` 或下载回调，正是为了**覆盖哈希缓存命中**：`DownloadQueue` 命中缓存时不会触发下载回调，但一定会把本地文件路径塞进 `IdAndPath` 交给 `loadRequestedPacks`。在这里把 `List<IdAndPath>` 整体替换成路径已转换的新列表，新下载与缓存命中两条路都被覆盖。单人世界的捆绑包（`WorldOpenFlows.loadBundledResourcePack` → `pushLocalPack`）走的也是同一个方法。
+拦截 `loadRequestedPacks` 而不是 `pushPack` 或下载回调，正是为了**覆盖哈希缓存命中**：`DownloadQueue` 命中缓存时不会触发下载回调，但一定会把本地文件路径塞进 `IdAndPath` 交给 `loadRequestedPacks`。在这里把 `List<IdAndPath>` 整体替换成路径已转换的新列表，新下载与缓存命中两条路都被覆盖。单人世界的捆绑包（`WorldOpenFlows.loadBundledResourcePack` → `pushLocalPack`）走的也是同一个方法。26.3 正式客户端从 `saves/<world>/resourcepacks/resources.zip` 读取，不是存档根部。
 
 | MC 区间 | `serverHook` | 目标方法 | 描述符 | 替换对象 |
 |---|---|---|---|---|
@@ -218,6 +218,12 @@ ZIP 产物按路径排序且时间戳固定；目录仍输出为目录。同一�
 - `universal`：core jar + 7 个嵌套适配器 → `build/libs/ViaResourcePack-<version>.jar`。
 
 不依赖 Fabric API：只用 fabric-loader（`FabricLoader.getGameDir()` + `ClientModInitializer`）、minecraft 与 mixin。
+
+### 5.1 客户端验收范围
+
+- **1.14.4 / Java 8 / Fabric Loader 0.19.5**：实际运行确认已启用的旧图集目录、格式 3 ZIP 升到 4；第二次运行复用缓存，资源重载仍生成图集。未启用的旧纹理目录和 ZIP 仅占位，未知目录未占位。
+- **26.3 / Java 25 / Fabric Loader 0.19.5**：实际运行确认本地目录、ZIP 以原 ID 重载；格式 104 不降级。离线单人世界的格式 46 捆绑 ZIP 升到 97.1；JFR 确认原版分别从实际转换 ZIP 中读取元数据与 `sounds.json`，随后成功进入世界。
+- 上述是隔离实例检查。中间客户端的适配范围主要依赖构建、版本矩阵与拦截点指纹校验；真实多人服务器下载、所有素材的视觉等价以及其他模组组合不据此视为已验收。
 
 ---
 
