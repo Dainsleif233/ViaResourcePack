@@ -25,11 +25,10 @@ import java.util.Map;
 /**
  * 极简 JSON 读写器。
  *
- * <p>为什么不用 Gson：core 要在 MC 1.14.4（gson 2.8.0）到 26.2（gson 2.14.0）之间
+ * <p>为什么不用 Gson：core 要在 MC 1.14.4（gson 2.8.0）到 26.3（gson 2.14.0）之间
  * 通用，而这段区间里 Gson 的静态入口有过增删（{@code JsonParser.parseString} 直到
  * 2.8.6 才有，实例方法 {@code parse} 长期处于 deprecated 状态）。资源包元数据的
- * JSON 结构极其简单，自带一份读写器可以彻底摆脱这个版本问题；转换库那一侧用的是
- * relocate 后的 gson 2.11，与本类无关。
+ * JSON 读写不依赖不同客户端所携带的 Gson 版本。
  *
  * <p>解析是**宽松**的：允许 UTF-8 BOM、{@code //} 与 {@code /* *\/} 注释、以及
  * 对象/数组末尾多余的逗号——现实里的资源包 {@code pack.mcmeta} 常有这些毛病，而
@@ -42,14 +41,20 @@ import java.util.Map;
 public final class Json {
 
     private final String text;
+    private final boolean rejectDuplicateKeys;
     private int pos;
 
-    private Json(String text) {
+    private Json(String text, boolean rejectDuplicateKeys) {
         this.text = text;
+        this.rejectDuplicateKeys = rejectDuplicateKeys;
     }
 
     /** 解析一段 JSON 文本。 */
     public static Object parse(String raw) throws JsonException {
+        return parse(raw, false);
+    }
+
+    private static Object parse(String raw, boolean rejectDuplicateKeys) throws JsonException {
         if (raw == null) {
             throw new JsonException("input is null");
         }
@@ -57,7 +62,7 @@ public final class Json {
         if (!text.isEmpty() && text.charAt(0) == '\uFEFF') {
             text = text.substring(1);
         }
-        Json json = new Json(text);
+        Json json = new Json(text, rejectDuplicateKeys);
         json.skipWhitespace();
         Object value = json.readValue();
         json.skipWhitespace();
@@ -68,9 +73,17 @@ public final class Json {
     }
 
     /** 解析并要求顶层是对象。 */
-    @SuppressWarnings("unchecked")
     public static Map<String, Object> parseObject(String raw) throws JsonException {
-        Object value = parse(raw);
+        return requireObject(parse(raw));
+    }
+
+    /** 内容改写需要唯一键，但仍接受资源包中常见的注释和尾逗号。 */
+    public static Map<String, Object> parseObjectRejectingDuplicateKeys(String raw) throws JsonException {
+        return requireObject(parse(raw, true));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> requireObject(Object value) throws JsonException {
         if (!(value instanceof Map)) {
             throw new JsonException("expected a JSON object at top level, got "
                     + (value == null ? "null" : value.getClass().getSimpleName()));
@@ -124,6 +137,9 @@ public final class Json {
                 throw error("expected a quoted object key");
             }
             String key = readString();
+            if (rejectDuplicateKeys && map.containsKey(key)) {
+                throw error("duplicate object key: " + key);
+            }
             skipWhitespace();
             if (peek() != ':') {
                 throw error("expected ':' after object key");

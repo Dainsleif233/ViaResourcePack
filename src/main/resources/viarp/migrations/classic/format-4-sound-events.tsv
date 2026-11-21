@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Dainsleif
+# 证据：docs/research/classic-sounds.md。仅 minecraft 命名空间。
+# 1.12.2 → 1.13 / 1.14.4：相同 OGG 与播放参数、注册键与调用语义对应的事件键。
+block.enderchest.close	block.ender_chest.close
+block.enderchest.open	block.ender_chest.open
+block.note.basedrum	block.note_block.basedrum
+block.note.harp	block.note_block.harp
+entity.bobber.splash	entity.fishing_bobber.splash
+entity.enderdragon.flap	entity.ender_dragon.flap
+entity.endermen.ambient	entity.enderman.ambient
+entity.endermen.hurt	entity.enderman.hurt
+entity.firework.large_blast	entity.firework_rocket.large_blast
+entity.firework.large_blast_far	entity.firework_rocket.large_blast_far
+entity.firework.launch	entity.firework_rocket.launch
+entity.irongolem.attack	entity.iron_golem.attack
+entity.lightning.thunder	entity.lightning_bolt.thunder
+entity.magmacube.squish	entity.magma_cube.squish
+entity.snowman.hurt	entity.snow_golem.hurt
+entity.zombie.attack_door_wood	entity.zombie.attack_wooden_door
+record.13	music_disc.13

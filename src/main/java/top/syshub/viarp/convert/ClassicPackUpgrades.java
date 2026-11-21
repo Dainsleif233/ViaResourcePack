@@ -83,12 +83,15 @@ final class ClassicPackUpgrades {
             case 2:
                 ClassicClockTextures.apply(workspace);
                 upgradeModels(workspace);
+                ClassicSoundUpgrades.migrateLegacyFiles(workspace);
+                ClassicSoundUpgrades.migrateEvents(workspace, 2);
                 break;
             case 3:
                 lowercaseAssets(workspace);
                 break;
             case 4:
                 flatten(workspace);
+                ClassicSoundUpgrades.migrateEvents(workspace, 4);
                 break;
             case 5:
                 upgradeEntityTextures(workspace);
@@ -361,7 +364,7 @@ final class ClassicPackUpgrades {
         return textures;
     }
 
-    private static Map<String, String> readMappings(String resource, String sourcePattern, String targetPattern) throws IOException {
+    static Map<String, String> readMappings(String resource, String sourcePattern, String targetPattern) throws IOException {
         InputStream stream = ClassicPackUpgrades.class.getResourceAsStream(resource);
         if (stream == null) {
             throw new IOException("Missing classic migration table: " + resource);
@@ -921,20 +924,20 @@ final class ClassicPackUpgrades {
         return String.join(", ", examples) + (ids.size() > examples.size() ? "（共 " + ids.size() + " 个）" : "");
     }
 
-    private static Map<String, Object> readObject(UpgradeWorkspace workspace, int edge, String file) throws IOException {
+    static Map<String, Object> readObject(UpgradeWorkspace workspace, int edge, String file) throws IOException {
         String raw = text(workspace, edge, file);
         if (raw == null) {
             return null;
         }
         try {
-            return Json.parseObject(raw);
+            return Json.parseObjectRejectingDuplicateKeys(raw);
         } catch (JsonException | StackOverflowError failure) {
             warn(workspace, edge, file, "JSON 无法安全解析；保留原文，不改写字段");
             return null;
         }
     }
 
-    private static String text(UpgradeWorkspace workspace, int edge, String file) throws IOException {
+    static String text(UpgradeWorkspace workspace, int edge, String file) throws IOException {
         Path path = workspace.path(file);
         if (Files.size(path) > MAX_TEXT_BYTES) {
             warn(workspace, edge, file, "文本超过迁移读取上限；保留原文件");
@@ -950,7 +953,7 @@ final class ClassicPackUpgrades {
     }
 
     @SuppressWarnings("unchecked")
-    private static Map<String, Object> object(Object value) {
+    static Map<String, Object> object(Object value) {
         return value instanceof Map ? (Map<String, Object>) value : null;
     }
 
@@ -968,7 +971,7 @@ final class ClassicPackUpgrades {
         }
     }
 
-    private static void warn(UpgradeWorkspace workspace, int edge, String file, String message) {
+    static void warn(UpgradeWorkspace workspace, int edge, String file, String message) {
         workspace.warn("格式 " + edge + " [" + file + "] " + message);
     }
 

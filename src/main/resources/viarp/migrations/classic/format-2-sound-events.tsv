@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Dainsleif
+# 证据：docs/research/classic-sounds.md。仅 minecraft 命名空间。
+# 1.8.9 → 1.9：相同 OGG 与播放参数、客户端调用语义对应的事件键。
+ambient.weather.thunder	entity.lightning.thunder
+gui.button.press	ui.button.click
+item.fireCharge.use	item.firecharge.use
+mob.bat.idle	entity.bat.ambient
+mob.cow.say	entity.cow.ambient
+random.drink	entity.generic.drink
+random.eat	entity.generic.eat
+random.levelup	entity.player.levelup
+tile.piston.in	block.piston.contract
+tile.piston.out	block.piston.extend
