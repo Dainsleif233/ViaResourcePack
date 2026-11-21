@@ -18,12 +18,14 @@
 package top.syshub.viarp.pack;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.IOException;
 
 import org.junit.jupiter.api.Test;
 
 import top.syshub.viarp.json.Json;
+import top.syshub.viarp.json.JsonException;
 
 /** 覆盖三代 {@code pack.mcmeta} schema 的解析与改写。 */
 class PackMetadataTest {
@@ -138,6 +140,24 @@ class PackMetadataTest {
         PackMetadata meta = PackMetadata.parse(text);
         assertThat(meta.primaryFormat()).isEqualTo(PackFormat.of(15));
         assertThat(meta.description("")).isEqualTo("messy");
+    }
+
+    @Test
+    void rejectsAmbiguousDeclarationsAndBoundsNesting() {
+        assertThatThrownBy(() -> PackMetadata.parse("{\"pack\":{\"pack_format\":3,\"pack_format\":4}}"))
+                .isInstanceOf(JsonException.class).hasMessageContaining("duplicate object key");
+
+        StringBuilder input = new StringBuilder("{\"pack\":{\"pack_format\":4},\"extension\":");
+        for (int i = 0; i < 120; i++) {
+            input.append('[');
+        }
+        input.append("null");
+        for (int i = 0; i < 120; i++) {
+            input.append(']');
+        }
+        input.append('}');
+        assertThatThrownBy(() -> PackMetadata.parse(input.toString()))
+                .isInstanceOf(JsonException.class).hasMessageContaining("JSON nesting exceeds");
     }
 
     @Test

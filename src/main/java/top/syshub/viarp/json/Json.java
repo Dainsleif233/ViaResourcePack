@@ -40,6 +40,8 @@ import java.util.Map;
  */
 public final class Json {
 
+    private static final int MAX_CONTAINER_DEPTH = 96;
+
     private final String text;
     private final boolean rejectDuplicateKeys;
     private int pos;
@@ -64,7 +66,7 @@ public final class Json {
         }
         Json json = new Json(text, rejectDuplicateKeys);
         json.skipWhitespace();
-        Object value = json.readValue();
+        Object value = json.readValue(0);
         json.skipWhitespace();
         if (json.pos < json.text.length()) {
             throw json.error("trailing content");
@@ -93,16 +95,18 @@ public final class Json {
 
     // ────────────────────────────── 读取 ──────────────────────────────
 
-    private Object readValue() throws JsonException {
+    private Object readValue(int depth) throws JsonException {
         if (pos >= text.length()) {
             throw error("unexpected end of input");
         }
         char c = text.charAt(pos);
         switch (c) {
             case '{':
-                return readObject();
+                checkContainerDepth(depth);
+                return readObject(depth + 1);
             case '[':
-                return readArray();
+                checkContainerDepth(depth);
+                return readArray(depth + 1);
             case '"':
                 return readString();
             case 't':
@@ -119,7 +123,13 @@ public final class Json {
         }
     }
 
-    private Map<String, Object> readObject() throws JsonException {
+    private void checkContainerDepth(int depth) throws JsonException {
+        if (depth >= MAX_CONTAINER_DEPTH) {
+            throw error("JSON nesting exceeds " + MAX_CONTAINER_DEPTH + " containers");
+        }
+    }
+
+    private Map<String, Object> readObject(int depth) throws JsonException {
         pos++; // '{'
         Map<String, Object> map = new LinkedHashMap<String, Object>();
         skipWhitespace();
@@ -146,7 +156,7 @@ public final class Json {
             }
             pos++;
             skipWhitespace();
-            map.put(key, readValue());
+            map.put(key, readValue(depth));
             skipWhitespace();
             char c = peek();
             if (c == ',') {
@@ -160,7 +170,7 @@ public final class Json {
         }
     }
 
-    private List<Object> readArray() throws JsonException {
+    private List<Object> readArray(int depth) throws JsonException {
         pos++; // '['
         List<Object> list = new ArrayList<Object>();
         skipWhitespace();
@@ -174,7 +184,7 @@ public final class Json {
                 pos++;
                 return list;
             }
-            list.add(readValue());
+            list.add(readValue(depth));
             skipWhitespace();
             char c = peek();
             if (c == ',') {

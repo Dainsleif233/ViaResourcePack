@@ -18,6 +18,9 @@
 package top.syshub.viarp.convert;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -36,10 +39,13 @@ import java.util.Map;
 import java.util.Set;
 
 import top.syshub.viarp.io.PathIo;
+import top.syshub.viarp.json.Json;
+import top.syshub.viarp.json.JsonException;
 
 /** 迁移只能修改已隔离的工作树；逻辑路径统一用 '/'，不得隐式覆盖其他资源。 */
 final class UpgradeWorkspace {
 
+    private static final int MAX_TEXT_BYTES = 4 * 1024 * 1024;
     private static final int MAX_WARNINGS = 256;
     private static final int MAX_WARNING_LENGTH = 2048;
 
@@ -142,8 +148,32 @@ final class UpgradeWorkspace {
         PathIo.writeString(path(relative), text);
     }
 
-    String readText(String relative) throws IOException {
-        return PathIo.readString(path(relative));
+    String readText(String relative, String context) throws IOException {
+        Path file = path(relative);
+        if (Files.size(file) > MAX_TEXT_BYTES) {
+            warn(context + " [" + relative + "] 文本超过迁移读取上限；保留原文件");
+            return null;
+        }
+        try {
+            String text = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(Files.readAllBytes(file))).toString();
+            return text.startsWith("\uFEFF") ? text.substring(1) : text;
+        } catch (CharacterCodingException ex) {
+            warn(context + " [" + relative + "] 无效 UTF-8；保留原字节，不替换字符");
+            return null;
+        }
+    }
+
+    Map<String, Object> readObject(String relative, String context) throws IOException {
+        String text = readText(relative, context);
+        if (text == null) {
+            return null;
+        }
+        try {
+            return Json.parseObjectRejectingDuplicateKeys(text);
+        } catch (JsonException ex) {
+            warn(context + " [" + relative + "] JSON 无法安全解析；保留原文，不改写字段");
+            return null;
+        }
     }
 
     void warn(String diagnostic) {

@@ -34,7 +34,6 @@ import java.util.Set;
 
 import top.syshub.viarp.json.Json;
 import top.syshub.viarp.json.JsonAccess;
-import top.syshub.viarp.json.JsonException;
 import top.syshub.viarp.pack.PackFormat;
 
 /** 现代格式的增量内容规则；只处理已选 overlay 投影后的 assets/。 */
@@ -536,13 +535,7 @@ final class ModernPackUpgrades {
     }
 
     private static Map<String, Object> readObject(UpgradeWorkspace workspace, String file) throws IOException {
-        String text = workspace.readText(file);
-        try {
-            return Json.parseObject(text);
-        } catch (JsonException e) {
-            workspace.warn("Retained unparseable JSON asset: " + file);
-            return null;
-        }
+        return workspace.readObject(file, "现代格式迁移");
     }
 
     private static void writeObject(UpgradeWorkspace workspace, String file, Map<String, Object> root) throws IOException {

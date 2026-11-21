@@ -31,8 +31,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-import top.syshub.viarp.json.Json;
-import top.syshub.viarp.json.JsonException;
 import top.syshub.viarp.pack.PackFormat;
 
 /** 仅重排原版 UV；不改工作树里的旧图、图集、模型或任何侧车。 */
@@ -238,14 +236,12 @@ final class EntitySheetUpgrades {
                 return true;
             }
             if (path.equals(spelling.get(fold(path))) && originals.contains(path)) {
-                try {
-                    Map<String, Object> atlas = Json.parseObject(workspace.readText(path));
+                Map<String, Object> atlas = workspace.readObject(path, "实体图集迁移");
+                if (atlas != null) {
                     Object sources = atlas.get("sources");
                     if (atlas.size() == 1 && sources instanceof List && canonicalDirectories((List<?>) sources, prefix)) {
                         return true;
                     }
-                } catch (JsonException ex) {
-                    // 与形状不支持走同一条保留路径；不推测实际被加载的旧图。
                 }
             }
             warn("retained " + path + "; custom or invalid atlas sources may change old sprite lookup, "

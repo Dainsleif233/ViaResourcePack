@@ -22,8 +22,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.StringReader;
-import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,14 +38,12 @@ import java.util.Set;
 import java.util.function.UnaryOperator;
 
 import top.syshub.viarp.json.Json;
-import top.syshub.viarp.json.JsonException;
 import top.syshub.viarp.pack.PackFormat;
 
 /** 仅执行有原版依据的迁移子集；依据见 docs/research/classic-pack-formats.md。 */
 final class ClassicPackUpgrades {
 
     private static final String VANILLA = "assets/minecraft/";
-    private static final int MAX_TEXT_BYTES = 4 * 1024 * 1024;
     private static final String BLOCK_ATLAS = VANILLA + "atlases/blocks.json";
     private static final String WIDGETS = VANILLA + "textures/gui/widgets.png";
     private static final String FLAT_TEXTURE_TABLE = "/viarp/migrations/classic/format-4-textures.tsv";
@@ -928,31 +924,11 @@ final class ClassicPackUpgrades {
     }
 
     static Map<String, Object> readObject(UpgradeWorkspace workspace, int edge, String file) throws IOException {
-        String raw = text(workspace, edge, file);
-        if (raw == null) {
-            return null;
-        }
-        try {
-            return Json.parseObjectRejectingDuplicateKeys(raw);
-        } catch (JsonException | StackOverflowError failure) {
-            warn(workspace, edge, file, "JSON 无法安全解析；保留原文，不改写字段");
-            return null;
-        }
+        return workspace.readObject(file, "格式 " + edge);
     }
 
     static String text(UpgradeWorkspace workspace, int edge, String file) throws IOException {
-        Path path = workspace.path(file);
-        if (Files.size(path) > MAX_TEXT_BYTES) {
-            warn(workspace, edge, file, "文本超过迁移读取上限；保留原文件");
-            return null;
-        }
-        try {
-            String value = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(Files.readAllBytes(path))).toString();
-            return value.startsWith("\uFEFF") ? value.substring(1) : value;
-        } catch (CharacterCodingException failure) {
-            warn(workspace, edge, file, "无效 UTF-8；保留原字节，不替换字符");
-            return null;
-        }
+        return workspace.readText(file, "格式 " + edge);
     }
 
     @SuppressWarnings("unchecked")

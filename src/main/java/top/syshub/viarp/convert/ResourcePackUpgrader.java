@@ -31,7 +31,7 @@ import top.syshub.viarp.pack.PackMetadata;
 final class ResourcePackUpgrader {
 
     // 改变产物内容或选择源视图的规则时递增；不得重用旧规则的产物。
-    static final String RULES_VERSION = "builtin-12";
+    static final String RULES_VERSION = "builtin-13";
 
     private ResourcePackUpgrader() {
     }
@@ -68,7 +68,11 @@ final class ResourcePackUpgrader {
             }
         }
         // 对旧纹理包，格式 1 步骤负责从 pack.txt 生成原有描述。
-        PackMetadata migrated = PackMetadata.parse(pack.readText("pack.mcmeta"));
+        String migratedText = pack.readText("pack.mcmeta", "升级结果");
+        if (migratedText == null) {
+            throw new IOException("Cannot verify migrated pack.mcmeta");
+        }
+        PackMetadata migrated = PackMetadata.parse(migratedText);
         pack.writeText("pack.mcmeta", migrated.withProjectedOverlays(target));
         return pack.warnings();
     }

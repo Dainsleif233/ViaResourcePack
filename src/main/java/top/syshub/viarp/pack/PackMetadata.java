@@ -61,7 +61,7 @@ public final class PackMetadata {
 
     /** 解析一份 {@code pack.mcmeta}；错误或自相矛盾的格式声明不构成升级依据。 */
     public static PackMetadata parse(String text) throws JsonException {
-        Map<String, Object> root = Json.parseObject(text);
+        Map<String, Object> root = Json.parseObjectRejectingDuplicateKeys(text);
         Map<String, Object> pack = JsonAccess.object(root, KEY_PACK);
         if (pack == null) {
             return new PackMetadata(root, PackFormat.UNKNOWN, UNKNOWN, UNKNOWN);

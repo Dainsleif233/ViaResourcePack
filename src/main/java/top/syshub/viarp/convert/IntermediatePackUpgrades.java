@@ -46,7 +46,6 @@ import javax.imageio.stream.FileImageInputStream;
 import javax.imageio.stream.ImageInputStream;
 
 import top.syshub.viarp.json.Json;
-import top.syshub.viarp.json.JsonException;
 import top.syshub.viarp.pack.PackFormat;
 
 /** 18–64 的小步迁移；按原版实际路径和已确认的结构槽操作。 */
@@ -805,42 +804,7 @@ final class IntermediatePackUpgrades {
     }
 
     private static Map<String, Object> readObject(UpgradeWorkspace workspace, int format, String file) throws IOException {
-        if (Files.size(workspace.path(file)) > 4 * 1024 * 1024) {
-            warn(workspace, format, file, "JSON 超过迁移规则读取上限，保留原件");
-            return null;
-        }
-        String text = workspace.readText(file);
-        if (tooDeep(text)) {
-            warn(workspace, format, file, "JSON 嵌套超过迁移规则读取上限，保留原件");
-            return null;
-        }
-        try {
-            return Json.parseObject(text);
-        } catch (JsonException ex) {
-            warn(workspace, format, file, "无法解析 JSON，保留原件");
-            return null;
-        }
-    }
-
-    // Json 的读取和写回均为递归；在接触不受信包的内容前先限制嵌套。
-    private static boolean tooDeep(String text) {
-        int depth = 0;
-        boolean inString = false;
-        for (int i = 0; i < text.length(); i++) {
-            char next = text.charAt(i);
-            if (inString && next == '\\') {
-                i++; // 跳过被转义字符。
-            } else if (next == '"') {
-                inString = !inString;
-            } else if (!inString && (next == '[' || next == '{')) {
-                if (++depth > 128) {
-                    return true;
-                }
-            } else if (!inString && (next == ']' || next == '}')) {
-                depth--;
-            }
-        }
-        return false;
+        return workspace.readObject(file, "格式 " + format);
     }
 
     @SuppressWarnings("unchecked")
