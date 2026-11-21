@@ -23,12 +23,16 @@ import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 /** 文件操作小工具。全部只用 Java 7 NIO，以便编译成 Java 8 字节码。 */
 public final class PathIo {
@@ -59,7 +63,7 @@ public final class PathIo {
 
     /** 递归删除 [path]（不存在则静默返回）。 */
     public static void deleteRecursively(Path path) throws IOException {
-        if (!Files.exists(path)) {
+        if (!Files.exists(path, LinkOption.NOFOLLOW_LINKS)) {
             return;
         }
         Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
@@ -91,22 +95,27 @@ public final class PathIo {
 
     /** 把 [from] 目录树复制到 [to]。 */
     public static void copyDirectory(final Path from, final Path to) throws IOException {
-        Files.createDirectories(to);
+        if (!Files.isDirectory(from, LinkOption.NOFOLLOW_LINKS)
+                || to.toAbsolutePath().normalize().startsWith(from.toAbsolutePath().normalize())) {
+            throw new IOException("Invalid pack directory copy: " + from + " -> " + to);
+        }
+        Files.createDirectory(to);
         Files.walkFileTree(from, new SimpleFileVisitor<Path>() {
             @Override
             public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                Files.createDirectories(to.resolve(from.relativize(dir).toString()));
+                if (!dir.equals(from)) {
+                    Files.createDirectory(to.resolve(relativeName(from, dir)));
+                }
                 return FileVisitResult.CONTINUE;
             }
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Path target = to.resolve(from.relativize(file).toString());
-                Path parent = target.getParent();
-                if (parent != null) {
-                    Files.createDirectories(parent);
-                }
-                Files.copy(file, target, StandardCopyOption.REPLACE_EXISTING);
+                requireRegularFile(file, attrs);
+                Path target = to.resolve(relativeName(from, file));
+                Files.copy(file, target, LinkOption.NOFOLLOW_LINKS);
+                requireRegularFile(target, Files.readAttributes(target, BasicFileAttributes.class,
+                        LinkOption.NOFOLLOW_LINKS));
                 return FileVisitResult.CONTINUE;
             }
         });
@@ -145,39 +154,71 @@ public final class PathIo {
         deleteRecursively(from);
     }
 
-    /** 文件或目录树的 SHA-1；目录按「相对路径 + 内容」的稳定顺序哈希。 */
-    public static String sha1(Path path) throws IOException {
+    /** 文件用原始字节 SHA-1；目录用排序后的类型、路径与定长内容摘要。 */
+    public static String sha1(final Path path) throws IOException {
         final MessageDigest digest = newSha1();
-        if (Files.isDirectory(path)) {
-            final Path root = path;
-            final java.util.List<Path> files = new java.util.ArrayList<Path>();
-            Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-                    files.add(file);
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-            java.util.Collections.sort(files, new java.util.Comparator<Path>() {
-                @Override
-                public int compare(Path a, Path b) {
-                    return root.relativize(a).toString().replace('\\', '/')
-                            .compareTo(root.relativize(b).toString().replace('\\', '/'));
-                }
-            });
-            for (Path file : files) {
-                digest.update(root.relativize(file).toString().replace('\\', '/').getBytes(UTF_8));
-                digest.update((byte) 0);
-                updateWithFile(digest, file);
-            }
-        } else {
+        BasicFileAttributes attributes = Files.readAttributes(path, BasicFileAttributes.class,
+                LinkOption.NOFOLLOW_LINKS);
+        if (!attributes.isDirectory()) {
+            requireRegularFile(path, attributes);
             updateWithFile(digest, path);
+            return hex(digest.digest());
+        }
+        final List<String> entries = new ArrayList<String>();
+        Files.walkFileTree(path, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path directory, BasicFileAttributes attrs) throws IOException {
+                if (!directory.equals(path)) {
+                    entries.add(relativeName(path, directory) + '/');
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                requireRegularFile(file, attrs);
+                entries.add(relativeName(path, file));
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        Collections.sort(entries);
+        MessageDigest perFile = newSha1();
+        for (String entry : entries) {
+            boolean directory = entry.endsWith("/");
+            digest.update((byte) (directory ? 'D' : 'F'));
+            digest.update(entry.getBytes(UTF_8));
+            digest.update((byte) 0);
+            if (!directory) {
+                updateWithFile(perFile, path.resolve(entry));
+                digest.update(perFile.digest());
+            }
         }
         return hex(digest.digest());
     }
 
+    private static String relativeName(Path root, Path entry) throws IOException {
+        StringBuilder name = new StringBuilder();
+        for (Path segment : root.relativize(entry)) {
+            String part = segment.toString();
+            if (part.indexOf('\\') >= 0 || part.indexOf(':') >= 0) {
+                throw new IOException("Invalid pack path component: " + part);
+            }
+            if (name.length() != 0) {
+                name.append('/');
+            }
+            name.append(part);
+        }
+        return name.toString();
+    }
+
+    private static void requireRegularFile(Path file, BasicFileAttributes attrs) throws IOException {
+        if (!attrs.isRegularFile() || attrs.isSymbolicLink()) {
+            throw new IOException("Not a regular pack resource: " + file);
+        }
+    }
+
     private static void updateWithFile(MessageDigest digest, Path file) throws IOException {
-        InputStream in = Files.newInputStream(file);
+        InputStream in = Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS);
         try {
             byte[] buffer = new byte[65536];
             int read;

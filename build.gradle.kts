@@ -56,25 +56,12 @@ tasks.processResources {
 
 val matrix: AdapterMatrix = AdapterMatrix.load(rootDir)
 
-/**
- * universal jar 里的一个嵌套 jar。
- *
- * @param projectPath 不带前导冒号的项目路径
- * @param jarTask     产出 jar 的任务名（混淆版本是 `remapJar`）
- * @param nestedName  嵌套后的文件名；刻意与源 jar 名解耦，好让 `META-INF/jars/` 下的
- *                    名字自解释（源 jar 名是项目目录名，比如 `library-1.0.0.jar`、
- *                    `1.20.5-1.0.0.jar`，直接嵌进去可读性很差）
- */
-data class Nested(val projectPath: String, val jarTask: String, val nestedName: String)
+// 源 jar 以版本族目录命名；嵌套路径明确标记它是 MC 适配器。
+fun nestedJarPath(adapter: McAdapter): String =
+    "META-INF/jars/viarp-adapter-mc-${adapter.version}-${project.version}.jar"
 
-val nested: List<Nested> = listOf(
-    Nested("library", "shadowJar", "viarp-library-${project.version}.jar")
-) + matrix.mc.map {
-    Nested(it.projectPath, it.jarTask, "viarp-adapter-mc-${it.version}-${project.version}.jar")
-}
-
-fun nestedJarFile(entry: Nested): File {
-    val target = project(":${entry.projectPath}")
+fun nestedJarFile(adapter: McAdapter): File {
+    val target = project(":${adapter.projectPath}")
     return target.layout.buildDirectory.file("libs/${target.name}-${target.version}.jar").get().asFile
 }
 
@@ -86,11 +73,11 @@ fun packageUniversalJar() {
     val coreJar = layout.buildDirectory.file("libs/${project.name}-core-${project.version}.jar").get().asFile
     require(coreJar.isFile) { "Core jar missing: ${coreJar.absolutePath}. Run `:jar` first." }
 
-    nested.forEach { entry ->
-        val jar = nestedJarFile(entry)
+    matrix.mc.forEach { adapter ->
+        val jar = nestedJarFile(adapter)
         require(jar.isFile) {
-            "Nested jar missing for ${entry.projectPath}: ${jar.absolutePath}. " +
-                "Build `:${entry.projectPath}:${entry.jarTask}` first."
+            "Nested jar missing for ${adapter.projectPath}: ${jar.absolutePath}. " +
+                "Build `:${adapter.projectPath}:${adapter.jarTask}` first."
         }
     }
 
@@ -107,9 +94,9 @@ fun packageUniversalJar() {
 
             val jars = JsonArray().also { mod.add("jars", it) }
 
-            nested.forEach { entry ->
-                val source = nestedJarFile(entry)
-                val name = "META-INF/jars/${entry.nestedName}"
+            matrix.mc.forEach { adapter ->
+                val source = nestedJarFile(adapter)
+                val name = nestedJarPath(adapter)
                 source.toPath().copyTo(fs.getPath("/$name"))
                 jars.add(JsonObject().also { it.addProperty("file", name) })
             }
@@ -127,25 +114,61 @@ fun packageUniversalJar() {
     Files.move(tmp.toPath(), outputFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
 }
 
-/** 构建全部适配器与嵌套库，再打成 universal fat jar。 */
+/** 构建全部适配器，与 core 一起打成 universal jar。 */
 val universal = tasks.register("universal") {
     group = "build"
-    description = "Build every adapter plus the nested library and package them into a universal fat jar"
+    description = "Build and embed every Minecraft adapter in the universal jar"
 
-    nested.forEach { dependsOn(":${it.projectPath}:${it.jarTask}") }
+    matrix.mc.forEach { dependsOn(":${it.projectPath}:${it.jarTask}") }
     dependsOn(tasks.named("jar"))
 
     outputs.upToDateWhen {
-        nested.all { project(":${it.projectPath}").tasks.getByName(it.jarTask).state.upToDate } &&
+        matrix.mc.all { project(":${it.projectPath}").tasks.getByName(it.jarTask).state.upToDate } &&
             tasks.named("jar").get().state.upToDate
     }
 
+    inputs.property("adapterPaths", matrix.mc.map { nestedJarPath(it) })
     outputs.file(layout.buildDirectory.file("libs/${project.name}-${project.version}.jar"))
 
     doLast {
         packageUniversalJar()
     }
 }
+
+// 同时检查清单和实际 ZIP 条目，防止旧依赖以直接打包的类或资源残留。
+fun verifyNoLegacyDependencies(zip: ZipFile, mod: JsonObject, label: String) {
+    val legacyId = "viarp-library"
+    val relations = listOf("depends", "recommends", "suggests", "conflicts", "breaks")
+    require(
+        mod.get("id")?.asString != legacyId &&
+            mod.getAsJsonArray("provides")?.none { it.asString == legacyId } != false &&
+            relations.none { mod.getAsJsonObject(it)?.has(legacyId) == true }
+    ) {
+        "$label fabric.mod.json references the legacy mod $legacyId"
+    }
+
+    val forbidden = listOf(
+        "com/agentdid127/resourcepack/",
+        "com/google/gson/",
+        "net/lingala/zip4j/",
+        "top/syshub/viarp/library/",
+        "top/syshub/viarp/shaded/"
+    )
+    val versionedPrefix = Regex("^META-INF/versions/[0-9]+/")
+    val legacyEntry = zip.entries().asSequence().firstOrNull { entry ->
+        val path = entry.name.replaceFirst(versionedPrefix, "")
+        forbidden.any { path.startsWith(it) }
+    }
+    require(legacyEntry == null) { "$label bundles an old dependency entry: ${legacyEntry?.name}" }
+}
+
+fun nestedJarEntries(zip: ZipFile): List<String> = zip.entries().asSequence()
+    .filter {
+        !it.isDirectory && (it.name.startsWith("META-INF/jars/", ignoreCase = true) ||
+            it.name.endsWith(".jar", ignoreCase = true))
+    }
+    .map { it.name }
+    .toList()
 
 /**
  * 校验 universal jar 的嵌套结构。
@@ -155,71 +178,84 @@ val universal = tasks.register("universal") {
  */
 val verifyUniversalJar = tasks.register("verifyUniversalJar") {
     group = "verification"
-    description = "Verify the universal jar: nested jar count, fabric.mod.json consistency, mixin config presence"
+    description = "Verify the universal jar contains only the expected adapters and their two mixins each"
     mustRunAfter(universal)
 
     doLast {
         val universalJar = layout.buildDirectory.file("libs/${project.name}-${project.version}.jar").get().asFile
         require(universalJar.isFile) { "Universal jar not found: ${universalJar.absolutePath}" }
 
-        val expected = nested.size
-        logger.lifecycle("Verifying ${universalJar.name} (expecting $expected nested jars)")
+        val expected = matrix.mc.associateBy { nestedJarPath(it) }
+        fun requireExactAdapterPaths(paths: List<String>, source: String) {
+            val actual = paths.toSet()
+            require(paths.size == expected.size && actual == expected.keys) {
+                val duplicates = paths.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+                "$source must contain each expected adapter exactly once: missing=${expected.keys - actual}, " +
+                    "unexpected=${actual - expected.keys}, duplicates=$duplicates"
+            }
+        }
+        logger.lifecycle("Verifying ${universalJar.name} (expecting ${expected.size} nested adapters)")
 
         ZipFile(universalJar).use { zip ->
             val rootEntry = zip.getEntry("fabric.mod.json") ?: error("Universal jar has no fabric.mod.json")
             val rootMod = zip.getInputStream(rootEntry).bufferedReader().use {
                 Gson().fromJson(it, JsonObject::class.java)
             }
-
-            val depends = rootMod.getAsJsonObject("depends")
-            require(depends != null && depends.has("viarp-adapter-mc") && depends.has("viarp-library")) {
-                "Root fabric.mod.json must depend on viarp-adapter-mc and viarp-library"
+            verifyNoLegacyDependencies(zip, rootMod, "Universal jar")
+            require(rootMod.getAsJsonObject("depends")?.has("viarp-adapter-mc") == true) {
+                "Root fabric.mod.json must depend on viarp-adapter-mc"
             }
 
-            val jars = rootMod.getAsJsonArray("jars")
-                ?: error("Root fabric.mod.json has no 'jars' array")
-            require(jars.size() == expected) {
-                "Nested jar count mismatch: fabric.mod.json declares ${jars.size()}, expected $expected"
+            val jars = rootMod.getAsJsonArray("jars") ?: error("Root fabric.mod.json has no 'jars' array")
+            val declaredPaths = jars.map {
+                it.asJsonObject.get("file")?.asString ?: error("A 'jars' entry has no 'file' field")
             }
+            requireExactAdapterPaths(declaredPaths, "Root fabric.mod.json jars")
+            requireExactAdapterPaths(nestedJarEntries(zip), "Universal archive")
 
-            var adapters = 0
-            for (element in jars) {
-                val path = element.asJsonObject.get("file")?.asString
-                    ?: error("A 'jars' entry has no 'file' field")
-                val entry = zip.getEntry(path)
-                require(entry != null) { "Nested jar '$path' is declared but missing from the archive" }
-
+            for ((path, adapter) in expected) {
+                val entry = zip.getEntry(path) ?: error("Nested adapter '$path' is missing from the archive")
                 val temp = Files.createTempFile("viarp-verify-", ".jar")
                 try {
                     zip.getInputStream(entry).use { Files.copy(it, temp, StandardCopyOption.REPLACE_EXISTING) }
                     ZipFile(temp.toFile()).use { inner ->
                         val modEntry = inner.getEntry("fabric.mod.json")
-                            ?: error("Nested jar '$path' has no fabric.mod.json")
+                            ?: error("Nested adapter '$path' has no fabric.mod.json")
                         val mod = inner.getInputStream(modEntry).bufferedReader().use {
                             Gson().fromJson(it, JsonObject::class.java)
                         }
-                        val id = mod.get("id")?.asString ?: error("Nested jar '$path' declares no mod id")
-                        if (id == "viarp-adapter-mc") {
-                            adapters++
-                            val configName = mod.getAsJsonArray("mixins")?.firstOrNull()?.asString
-                                ?: error("Adapter '$path' declares no mixin config")
-                            val config = inner.getEntry(configName)
-                                ?: error("Adapter '$path' references missing mixin config $configName")
-                            val mixins = inner.getInputStream(config).bufferedReader().use {
-                                Gson().fromJson(it, JsonObject::class.java)
-                            }
-                            val pkg = mixins.get("package").asString.replace('.', '/')
-                            val declared = mixins.getAsJsonArray("client")
-                                ?: error("Mixin config $configName in '$path' has no 'client' list")
-                            require(declared.size() == 2) {
-                                "Adapter '$path' should declare exactly 2 mixins (one local + one server), " +
-                                    "found ${declared.size()}"
-                            }
-                            declared.forEach { mixin ->
-                                val classPath = "$pkg/${mixin.asString.replace('.', '/')}.class"
-                                require(inner.getEntry(classPath) != null) {
-                                    "Adapter '$path' declares mixin ${mixin.asString} but $classPath is absent"
-                                }
+                        verifyNoLegacyDependencies(inner, mod, "Adapter '$path'")
+                        require(
+                            mod.get("id")?.asString == "viarp-adapter-mc" &&
+                                mod.get("version")?.asString == "${project.version}-${adapter.version}"
+                        ) {
+                            "Nested jar '$path' is not the expected adapter for Minecraft ${adapter.version}"
+                        }
+                        require((mod.getAsJsonArray("jars")?.size() ?: 0) == 0 && nestedJarEntries(inner).isEmpty()) {
+                            "Adapter '$path' must not contain or declare nested jars"
+                        }
+
+                        val configs = mod.getAsJsonArray("mixins") ?: error("Adapter '$path' declares no mixin config")
+                        require(configs.size() == 1) { "Adapter '$path' must declare exactly one mixin config" }
+                        val configName = configs[0].asString
+                        val config = inner.getEntry(configName)
+                            ?: error("Adapter '$path' references missing mixin config $configName")
+                        val mixins = inner.getInputStream(config).bufferedReader().use {
+                            Gson().fromJson(it, JsonObject::class.java)
+                        }
+                        val pkg = mixins.get("package").asString.replace('.', '/')
+                        val declared = mixins.getAsJsonArray("client")?.map { it.asString }
+                            ?: error("Mixin config $configName in '$path' has no 'client' list")
+                        require(
+                            declared.size == 2 && declared.toSet() == adapter.mixins.toSet() &&
+                                listOf("mixins", "server").all { (mixins.getAsJsonArray(it)?.size() ?: 0) == 0 }
+                        ) {
+                            "Adapter '$path' should declare only the two expected client mixins: ${adapter.mixins}"
+                        }
+                        declared.forEach { mixin ->
+                            val classPath = "$pkg/${mixin.replace('.', '/')}.class"
+                            require(inner.getEntry(classPath)?.isDirectory == false) {
+                                "Adapter '$path' declares mixin $mixin but $classPath is absent"
                             }
                         }
                     }
@@ -227,10 +263,6 @@ val verifyUniversalJar = tasks.register("verifyUniversalJar") {
                     Files.deleteIfExists(temp)
                 }
                 logger.lifecycle("  ok $path")
-            }
-
-            require(adapters == matrix.mc.size) {
-                "Expected ${matrix.mc.size} adapter jars, found $adapters"
             }
         }
 
@@ -384,7 +416,7 @@ tasks.build {
 
 tasks.withType<JavaCompile>().configureEach {
     options.encoding = "UTF-8"
-    // core 必须是 Java 8 字节码：它是 1.14.4（Java 8）到 26.2（Java 25）共用的那一份。
+    // 各版本的适配器共用同一份 core，必须保持 Java 8 字节码以支持旧客户端。
     // 用 -source/-target 而不是 --release，理由见 docs/DESIGN.md §5。
     options.compilerArgs.addAll(listOf("-source", "8", "-target", "8", "-nowarn"))
     options.isFork = true

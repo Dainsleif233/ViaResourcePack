@@ -14,10 +14,6 @@ pluginManagement {
 
 rootProject.name = "ViaResourcePack"
 
-// 嵌套库子项目：把 ResourcePackConverter + relocate 后的 gson/zip4j 打成一个
-// Fabric 库 mod，再由根项目 jar-in-jar 嵌进主 jar。
-include("library")
-
 // 适配器子项目来自 gradle/adapters.toml —— 版本矩阵的单一数据源。
 // settings 脚本在 buildSrc 编译之前运行，所以这里用几行代码重读它需要的
 // `version` 字段；`:validateAdapterMatrix` 负责校验它与磁盘目录一致。

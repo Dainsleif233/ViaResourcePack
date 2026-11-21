@@ -17,7 +17,9 @@
  */
 package top.syshub.viarp.pack;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -110,9 +112,100 @@ public final class PackMetadata {
         return JsonAccess.string(pack, KEY_DESCRIPTION, fallback);
     }
 
+    /** 按原版声明顺序返回在基准格式下启用的客户端 overlay 目录，靠后的优先级更高。 */
+    public List<String> overlaysFor(PackFormat source) throws JsonException {
+        if (source.major() < FIRST_LEGACY_RANGE || !root.containsKey("overlays")) {
+            return Collections.emptyList();
+        }
+        List<Object> entries = JsonAccess.array(JsonAccess.object(root, "overlays"), "entries");
+        if (entries == null) {
+            throw new JsonException("Missing overlays.entries list");
+        }
+        boolean modern = source.major() > LAST_LEGACY_FORMAT;
+        boolean mixed = modern && requiresLegacyOverlayFields(entries);
+        List<String> active = new ArrayList<String>();
+        for (Object raw : entries) {
+            if (!(raw instanceof Map)) {
+                throw new JsonException("Overlay entry is not an object");
+            }
+            Map<?, ?> entry = (Map<?, ?>) raw;
+            Object name = entry.get("directory");
+            if (!(name instanceof String) || !((String) name).matches("[-_a-zA-Z0-9.]+")
+                    || ".".equals(name) || "..".equals(name) || ((String) name).endsWith(".")
+                    || "assets".equalsIgnoreCase((String) name) || "data".equalsIgnoreCase((String) name)) {
+                throw new JsonException("Unsafe overlay directory: " + name);
+            }
+            if (modern && !entry.containsKey("formats") && !entry.containsKey(KEY_MIN_FORMAT)
+                    && !entry.containsKey(KEY_MAX_FORMAT)) {
+                // 现代原版会跳过完全不声明版本的条目，而不是丢掉整个列表。
+                continue;
+            }
+            PackFormatRange range = readOverlayRange(modern, mixed, entry);
+            if (!range.min().isKnown()) {
+                throw new JsonException("Invalid format range in overlay " + name);
+            }
+            if (range.contains(source)) {
+                active.add((String) name);
+            }
+        }
+        return active;
+    }
+
+    private static boolean requiresLegacyOverlayFields(List<Object> entries) {
+        for (Object raw : entries) {
+            if (raw instanceof Map) {
+                Map<?, ?> entry = (Map<?, ?>) raw;
+                PackFormat oldMin = readLegacyRange(entry.get("formats")).min();
+                PackFormat modernMin = readBound(entry.get(KEY_MIN_FORMAT), 0);
+                if ((oldMin.isKnown() && oldMin.major() <= LAST_LEGACY_FORMAT)
+                        || (modernMin.isKnown() && modernMin.major() <= LAST_LEGACY_FORMAT)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static PackFormatRange readOverlayRange(boolean modern, boolean mixed, Map<?, ?> entry) {
+        boolean hasOld = entry.containsKey("formats");
+        PackFormatRange old = readLegacyRange(entry.get("formats"));
+        if (!modern) {
+            return old;
+        }
+        if ((hasOld || mixed) && !old.min().isKnown()) {
+            return UNKNOWN;
+        }
+        if (!entry.containsKey(KEY_MIN_FORMAT) && !entry.containsKey(KEY_MAX_FORMAT)) {
+            return old.max().major() <= LAST_LEGACY_FORMAT ? old : UNKNOWN;
+        }
+        PackFormat min = readBound(entry.get(KEY_MIN_FORMAT), 0);
+        PackFormat max = readBound(entry.get(KEY_MAX_FORMAT), PackFormat.MAX_MINOR);
+        if (mixed) {
+            if (old.min().major() != min.major()
+                    || (old.max().major() != max.major() && old.max().major() != LAST_LEGACY_FORMAT)) {
+                return UNKNOWN;
+            }
+        } else if (hasOld) {
+            return UNKNOWN;
+        }
+        return orderedRange(min, max);
+    }
+
     /** 只改写格式声明；迁移 overlays、filter 或素材是调用者的职责。 */
     public String withFormat(PackFormat target) {
+        return withFormat(target, false);
+    }
+
+    /** 将 overlays 已经物化进 assets 的单版本产物写成目标格式。 */
+    public String withProjectedOverlays(PackFormat target) {
+        return withFormat(target, true);
+    }
+
+    private String withFormat(PackFormat target, boolean flattenOverlays) {
         Map<String, Object> newRoot = new LinkedHashMap<String, Object>(root);
+        if (flattenOverlays) {
+            newRoot.remove("overlays");
+        }
         Map<String, Object> pack = JsonAccess.object(root, KEY_PACK);
         Map<String, Object> newPack = pack == null
                 ? new LinkedHashMap<String, Object>() : new LinkedHashMap<String, Object>(pack);

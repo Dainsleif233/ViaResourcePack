@@ -50,8 +50,7 @@ dependencies {
     }
 
     // core（根项目）编译期可见即可，运行期由 Fabric 的类加载器提供。
-    // 刻意不依赖 `:library`：适配器只调 core 的 `ViaRpHooks`，转换引擎是运行期
-    // 反射加载的，编译期完全不需要看到它。
+    // 适配器通过共享 ViaRpHooks 调用 core；迁移规则不属于适配器。
     add("compileOnly", project(":"))
 
     if (adapter.obfuscated) {

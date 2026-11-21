@@ -19,6 +19,7 @@ package top.syshub.viarp.cache;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -27,19 +28,19 @@ import java.util.List;
 
 import top.syshub.viarp.ViaRpLog;
 import top.syshub.viarp.io.PathIo;
+import top.syshub.viarp.pack.PackFormat;
 
 /**
  * 转换产物缓存目录。
  *
  * <p>布局：
  * <pre>
- *   cache/&lt;sha1-of-source&gt;-&lt;targetMajor&gt;/
+ *   cache/v2-&lt;sourceSha1&gt;-&lt;zip|dir&gt;-&lt;targetMajor&gt;-&lt;targetMinor&gt;-&lt;rulesFingerprint&gt;/
  *       pack.zip | pack/        转换产物（源是 zip 则为 zip，源是目录则为目录）
  *       meta.json              见 {@link CacheEntryMeta}
  * </pre>
  *
- * <p>缓存键里带目标 major：同一个源包在不同游戏版本下的产物互不覆盖，玩家在
- * 1.20 与 1.21 之间来回切换时两份产物都留着。
+ * <p>源文件继续使用 SHA-1，以支持旧版服务器包下载去重；目标格式和规则版本隔离不同转换产物。
  */
 public final class ConversionCache {
 
@@ -47,69 +48,101 @@ public final class ConversionCache {
     private static final String DIR_PAYLOAD = "pack";
 
     private final Path cacheDir;
-    private final CacheIndex index;
     private final long maxBytes;
 
-    public ConversionCache(Path cacheDir, CacheIndex index, long maxBytes) {
+    public ConversionCache(Path cacheDir, long maxBytes) {
         this.cacheDir = cacheDir;
-        this.index = index;
         this.maxBytes = maxBytes;
     }
 
-    public CacheIndex index() {
-        return index;
-    }
-
-    public static String cacheKey(String sourceSha1, int targetMajor) {
-        return sourceSha1 + "-" + targetMajor;
+    /** rulesVersion 必须随转换引擎或其他影响产物的规则变化。 */
+    public static String cacheKey(String sourceSha1, boolean zip, PackFormat target, String rulesVersion) {
+        return CacheKey.create(sourceSha1, zip, target, rulesVersion);
     }
 
     public Path entryDir(String cacheKey) {
+        if (CacheKey.parse(cacheKey) == null) {
+            throw new IllegalArgumentException("Invalid conversion cache key");
+        }
         return cacheDir.resolve(cacheKey);
     }
 
-    /**
-     * 缓存里可用的产物路径；不存在或元数据不匹配则返回 {@code null}。
-     *
-     * @param wantZip 期望的产物形态（源是 zip 就要 zip，源是目录就要目录）
-     */
+    /** 用外部提供的源 SHA-1 查完整缓存键；非法哈希视为未命中。 */
+    public Path lookup(String sourceSha1, boolean zip, PackFormat target, String rulesVersion) {
+        String cacheKey;
+        try {
+            cacheKey = cacheKey(sourceSha1, zip, target, rulesVersion);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        return lookup(cacheKey, zip);
+    }
+
+    /** 缓存里可用的产物路径；键、元数据或产物形态不匹配则返回 {@code null}。 */
     public Path lookup(String cacheKey, boolean wantZip) {
-        Path dir = entryDir(cacheKey);
-        if (!Files.isDirectory(dir)) {
+        CacheKey parsed = CacheKey.parse(cacheKey);
+        if (parsed == null || parsed.zip != wantZip) {
+            return null;
+        }
+        Path dir = cacheDir.resolve(cacheKey);
+        if (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) {
             return null;
         }
         try {
-            // 元数据读不动（版本不符、损坏）就当缓存不可用，重新转换。
-            CacheEntryMeta.read(dir);
+            if (!isDirectChild(cacheDir, dir) || !cacheKey.equals(CacheEntryMeta.read(dir).entryKey())) {
+                return null;
+            }
+            Path payload = dir.resolve(wantZip ? ZIP_PAYLOAD : DIR_PAYLOAD);
+            boolean rightShape = wantZip ? Files.isRegularFile(payload, LinkOption.NOFOLLOW_LINKS)
+                    : Files.isDirectory(payload, LinkOption.NOFOLLOW_LINKS);
+            if (rightShape && isDirectChild(dir, payload)) {
+                return payload;
+            }
         } catch (IOException e) {
-            ViaRpLog.debug("Discarding unusable cache entry {}", dir, e);
-            PathIo.deleteQuietly(dir);
-            return null;
-        }
-        Path payload = dir.resolve(wantZip ? ZIP_PAYLOAD : DIR_PAYLOAD);
-        if (wantZip ? Files.isRegularFile(payload) : Files.isDirectory(payload)) {
-            return payload;
+            // 这里只报告未命中，不碰可能正由别的线程发布的产物。
+            ViaRpLog.debug("Ignoring unusable cache entry {}", dir, e);
         }
         return null;
     }
 
     /** 目标产物应该写到的位置（zip 或目录）。 */
-    public Path payloadPath(String cacheKey, boolean zip) {
-        return entryDir(cacheKey).resolve(zip ? ZIP_PAYLOAD : DIR_PAYLOAD);
+    public Path payloadPath(String cacheKey, boolean zip) throws IOException {
+        CacheKey parsed = CacheKey.parse(cacheKey);
+        if (parsed == null || parsed.zip != zip) {
+            throw new IllegalArgumentException("Invalid conversion cache key or payload kind");
+        }
+        Path dir = cacheDir.resolve(cacheKey);
+        checkEntryDirectory(dir);
+        Path payload = dir.resolve(zip ? ZIP_PAYLOAD : DIR_PAYLOAD);
+        if (Files.exists(payload, LinkOption.NOFOLLOW_LINKS) && !isDirectChild(dir, payload)) {
+            throw new IOException("Cache payload is not a direct child of " + dir);
+        }
+        return payload;
     }
 
     /** 把 [meta] 写进缓存记录目录。 */
     public void writeMeta(String cacheKey, CacheEntryMeta meta) throws IOException {
         Path dir = entryDir(cacheKey);
-        Files.createDirectories(dir);
+        checkEntryDirectory(dir);
         meta.write(dir);
+    }
+
+    private void checkEntryDirectory(Path dir) throws IOException {
+        if (Files.exists(dir, LinkOption.NOFOLLOW_LINKS)
+                && (!Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS) || !isDirectChild(cacheDir, dir))) {
+            throw new IOException("Cache entry is not a direct directory under " + cacheDir);
+        }
+    }
+
+    private static boolean isDirectChild(Path parent, Path child) throws IOException {
+        return child.toRealPath().equals(parent.toRealPath().resolve(child.getFileName()));
     }
 
     /**
      * 把缓存裁剪到 {@link #maxBytes} 以内，按 {@code createdAt} 从旧到新淘汰。
      *
      * <p>刻意用 createdAt 而不是文件访问时间：很多文件系统默认关闭 atime 更新，
-     * 拿不到可靠的「最后使用」时间；而索引里的 usedAt 只覆盖被索引到的源包。
+     * 拿不到可靠的「最后使用」时间。
      */
     public void prune() {
         if (maxBytes <= 0 || !Files.isDirectory(cacheDir)) {
@@ -120,7 +153,10 @@ public final class ConversionCache {
         List<Path> dirs = new ArrayList<Path>();
         try (java.util.stream.Stream<Path> stream = Files.list(cacheDir)) {
             for (Path path : stream.collect(java.util.stream.Collectors.toList())) {
-                if (Files.isDirectory(path)) {
+                String key = path.getFileName().toString();
+                if ((CacheKey.parse(key) != null || CacheKey.isLegacy(key))
+                        && Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)
+                        && isDirectChild(cacheDir, path)) {
                     dirs.add(path);
                 }
             }
@@ -132,7 +168,8 @@ public final class ConversionCache {
             long size = directorySize(dir);
             long createdAt;
             try {
-                createdAt = CacheEntryMeta.read(dir).createdAt;
+                CacheEntryMeta meta = CacheEntryMeta.read(dir);
+                createdAt = dir.getFileName().toString().equals(meta.entryKey()) ? meta.createdAt : 0L;
             } catch (IOException e) {
                 // 元数据坏掉的目录优先淘汰。
                 createdAt = 0L;
@@ -158,12 +195,10 @@ public final class ConversionCache {
                 break;
             }
             PathIo.deleteQuietly(candidate.dir);
-            index.forgetKey(candidate.dir.getFileName().toString());
             freed += candidate.size;
             ViaRpLog.info("Pruned cached conversion {} ({} MiB)",
                     candidate.dir.getFileName(), candidate.size / (1024 * 1024));
         }
-        index.saveIfDirty();
     }
 
     private static long directorySize(Path dir) {

@@ -103,11 +103,6 @@ public final class ViaRpPaths {
         return root.resolve("cache");
     }
 
-    /** 「源包 → 缓存键」索引文件。 */
-    public Path indexFile() {
-        return root.resolve("index.json");
-    }
-
     /** 转换临时目录；启动时会被清空。 */
     public Path workDir() {
         return root.resolve("work");

@@ -21,76 +21,115 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.file.DirectoryStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-/**
- * zip 解压 / 打包。
- *
- * <p>刻意只用 {@code java.util.zip}：core 不引用 relocate 后的 zip4j，这样嵌套库
- * 缺失时 core 仍能加载（只是转换功能不可用）。
- */
+/** 仅用 JDK 解压和生成资源包 ZIP。 */
 public final class ZipTool {
+
+    private static final int MAX_ENTRIES = 200_000;
+    private static final int MAX_PATH_LENGTH = 1024;
+    private static final long MAX_ENTRY_BYTES = 256L * 1024 * 1024;
+    private static final long MAX_TOTAL_BYTES = 2L * 1024 * 1024 * 1024;
 
     private ZipTool() {
         throw new UnsupportedOperationException();
     }
 
-    /**
-     * 把 [zip] 解压到 [target]。
-     *
-     * <p>会拒绝任何逃出 [target] 的条目名（zip slip）。
-     */
+    /** 解压到空的工作树；拒绝歧义路径、覆盖条目和超出解压预算的输入。 */
     public static void extract(Path zip, Path target) throws IOException {
-        Files.createDirectories(target);
         Path root = target.toAbsolutePath().normalize();
-        ZipFile file = new ZipFile(zip.toFile());
-        try {
+        Files.createDirectories(root);
+        if (!Files.isDirectory(root, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("ZIP extraction target is not a directory");
+        }
+        try (DirectoryStream<Path> contents = Files.newDirectoryStream(root)) {
+            if (contents.iterator().hasNext()) {
+                throw new IOException("ZIP extraction target must be empty");
+            }
+        }
+        try (ZipFile file = new ZipFile(zip.toFile())) {
+            if (file.size() > MAX_ENTRIES) {
+                throw new IOException("Too many ZIP entries: " + file.size());
+            }
+            Set<String> names = new HashSet<String>();
+            long total = 0;
+            byte[] buffer = new byte[65536];
             Enumeration<? extends ZipEntry> entries = file.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
-                if (name.isEmpty()) {
-                    continue;
-                }
-                Path out = root.resolve(name.replace('\\', '/')).normalize();
-                if (!out.startsWith(root)) {
-                    throw new IOException("Zip entry escapes the target directory: " + name);
+                String relative = entry.isDirectory() ? name.substring(0, name.length() - 1) : name;
+                Path out = entryPath(root, relative);
+                if (!names.add(relative.toLowerCase(Locale.ROOT))) {
+                    throw new IOException("Duplicate ZIP entry: " + name);
                 }
                 if (entry.isDirectory()) {
                     Files.createDirectories(out);
                     continue;
                 }
-                Path parent = out.getParent();
-                if (parent != null) {
-                    Files.createDirectories(parent);
+                long limit = Math.min(MAX_ENTRY_BYTES, MAX_TOTAL_BYTES - total);
+                if (entry.getSize() > limit) {
+                    throw new IOException("ZIP data exceeds extraction budget: " + name);
                 }
-                InputStream in = file.getInputStream(entry);
-                try {
-                    OutputStream os = new BufferedOutputStream(Files.newOutputStream(out));
-                    try {
-                        PathIo.copyStream(in, os);
-                    } finally {
-                        os.close();
+                Files.createDirectories(out.getParent());
+                long written = 0;
+                CRC32 crc = new CRC32();
+                try (InputStream input = file.getInputStream(entry);
+                     OutputStream output = new BufferedOutputStream(
+                             Files.newOutputStream(out, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE))) {
+                    int count;
+                    while ((count = input.read(buffer)) != -1) {
+                        written += count;
+                        if (written > limit) {
+                            throw new IOException("ZIP data exceeds extraction budget: " + name);
+                        }
+                        crc.update(buffer, 0, count);
+                        output.write(buffer, 0, count);
                     }
-                } finally {
-                    in.close();
                 }
+                if (entry.getSize() != written || entry.getCrc() != crc.getValue()) {
+                    throw new IOException("ZIP entry size or checksum does not match its contents: " + name);
+                }
+                total += written;
             }
-        } finally {
-            file.close();
         }
+    }
+
+    private static Path entryPath(Path root, String relative) throws IOException {
+        if (relative.length() > MAX_PATH_LENGTH || relative.indexOf('\\') >= 0 || relative.indexOf(':') >= 0) {
+            throw new IOException("Invalid ZIP entry path: " + relative);
+        }
+        Path result = root;
+        for (String part : relative.split("/", -1)) {
+            if (part.isEmpty() || ".".equals(part) || "..".equals(part)
+                    || part.endsWith(".") || part.endsWith(" ")) {
+                throw new IOException("Invalid ZIP entry path: " + relative);
+            }
+            result = result.resolve(part);
+        }
+        if (!result.startsWith(root)) {
+            throw new IOException("ZIP entry escapes the target directory: " + relative);
+        }
+        return result;
     }
 
     /**
@@ -107,7 +146,10 @@ public final class ZipTool {
         final List<Path> files = new ArrayList<Path>();
         Files.walkFileTree(source, new SimpleFileVisitor<Path>() {
             @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                if (!attrs.isRegularFile() || attrs.isSymbolicLink()) {
+                    throw new IOException("Not a regular pack resource: " + file);
+                }
                 files.add(file);
                 return FileVisitResult.CONTINUE;
             }

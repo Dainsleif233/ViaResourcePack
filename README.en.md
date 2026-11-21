@@ -2,26 +2,22 @@
 
 [English](README.en.md) | [中文](README.md)
 
-A Fabric **client-side** mod that automatically converts resource packs to the running Minecraft version when they are loaded. Both local and server-provided packs are covered.
+A Fabric **client-side** mod that upgrades old texture packs and resource packs with built-in migration rules. Original packs are not modified.
 
-Supports Minecraft **1.14.4 – 26.2** with a single universal jar.
+A single jar supports Minecraft **1.14.4–26.3**. Version 2.0 **does not downgrade packs**. If a pack is newer than your client, use a newer client or download an older version of the pack.
 
 ## What it does
 
-Drop a 1.12-era resource pack into `resourcepacks/` and it just works in 1.21 — even old server-sent packs are converted before being loaded. The vanilla "made for an older version of Minecraft" warning will no longer leave you're staring at broken textures.
-
-- **Local packs**: zip and folder packs in `resourcepacks/`. Conversion happens **only after you enable the pack and confirm** in the resource pack screen — merely browsing the screen does not trigger it (otherwise opening the screen with many old packs in the folder would stall for minutes).
-- **Server packs**: packs sent by the server, including the **hash-cache hit case where nothing is re-downloaded**. On 1.20.2 and earlier it also skips vanilla's redundant downloads: those versions deduplicate by **URL**, not by content hash, so servers whose URLs carry changing tokens force a full re-download on every join.
-- **World-bundled packs**: `level/resourcepacks/resources.zip` in singleplayer.
-- Conversion results are cached; the same pack is converted only once.
-
-Resource packs made for 1.21.9+ (which declare only `min_format` / `max_format`) could not even appear in the list on older clients — vanilla throws away the whole pack when `pack_format` is missing. This mod generates a placeholder entry for such not-yet-enabled packs so they show up with their real name, description and icon, and are converted once selected.
+- **Local packs:** Supports ZIP and folder packs. By default, upgrade runs when you enable a pack and confirm, not when you browse the list. Recognized texture packs without `pack.mcmeta` get a selectable placeholder.
+- **Server and world-bundled packs:** Upgrades run after vanilla has the file, including vanilla cache hits. On clients through 1.20.2, a previously upgraded pack can also be reused directly by the server's declared content hash.
+- **Migrations by pack format:** Modern major and minor versions are distinct. The catalog includes 26.4-s10 (104.0), but the 26.3 target is 97.1. Newer snapshot packs are not downgraded to it.
+- **Caching:** Results are separated by source contents, target format, and migration rules. Failed upgrades leave the original unchanged and are logged.
 
 ## Installation
 
 Requires Fabric Loader ≥ 0.15.0. **Fabric API is not required.**
 
-Drop `ViaResourcePack-<version>.jar` into `mods/` — the version adapters and the conversion library are all embedded in this single jar.
+Drop `ViaResourcePack-<version>.jar` into `mods/` — the jar includes all version adapters. No separate converter is needed.
 
 ## Configuration
 
@@ -45,9 +41,9 @@ After the first launch a config file is generated at `<game dir>/config/viaresou
 | `convertServerPacks`      | Convert server- / world-provided packs                                                                                                |
 | `onlyConvertEnabledPacks` | Convert only local packs that are enabled. Turning this off makes the whole directory convert when the resource pack screen is opened |
 | `maxCacheMegabytes`       | Cache size limit; old entries are evicted by creation time when exceeded                                                              |
-| `verbose`                 | Enable the conversion library's own verbose logging                                                                                   |
+| `verbose`                 | Log the pack format migration route                                                                                   |
 
-Caches and temporary files live under `<game dir>/config/viaresourcepack/`; you may delete the whole directory at any time (conversions will just run again next time).
+Caches and temporary files live under `<game dir>/config/viaresourcepack/`; you can delete `cache/` after exiting Minecraft; the next launch will re-create needed outputs.
 
 ## Compatibility
 
@@ -57,28 +53,24 @@ Caches and temporary files live under `<game dir>/config/viaresourcepack/`; you 
 
 ## Known limitations
 
-Conversion is done by [ResourcePackConverter](https://github.com/agentdid127/ResourcePackConverter), whose converters cover up to pack_format 75 (1.21.11). **On 26.1 / 26.2, packs are converted to the 1.21.11 shape** and then `pack.mcmeta` is rewritten to declare the current format; structural changes between 1.21.11 and 26.x are not handled automatically, so individual assets may still look wrong.
+Only assets with known equivalents can be migrated automatically. Unmapped cells in old texture atlases, removed resources, and some custom models, shaders and mod-specific formats may need manual work. Check the log for detected cases the upgrader leaves untouched.
 
-When jumping across many major versions (e.g. 1.7 → 26.2), some assets simply cannot be migrated automatically.
-
-The first conversion blocks resource loading and large packs will be noticeably slow; afterward everything comes from the cache.
+The first upgrade runs during resource loading and may pause the game for large packs. Later loads can reuse the cached result. If Minecraft 26.x logs that it removed a stale incompatibility flag but does not load the pack in that pass, re-enable it in the pack screen or exit normally and restart.
 
 ## Building
 
-Requires JDK 25 (the build emits Java 8 bytecode).
+Use JDK 25 and the repository's Gradle wrapper:
 
 ```bash
-./gradlew build              # all adapters + nested library + universal jar
-./gradlew verifyUniversalJar # verify the universal jar's nesting structure
-./gradlew test :library:test # unit tests
+./gradlew build                       # compile, test and package
+./gradlew universal verifyUniversalJar # package and check seven nested adapters
+./gradlew test                        # unit tests
 ```
 
 Artifact: `build/libs/ViaResourcePack-<version>.jar`.
 
-For a deep dive into the architecture and per-version interception points, see [docs/DESIGN.md](docs/DESIGN.md); for a quick start aimed at AI assistants and maintainers, see [AGENTS.md](AGENTS.md).
+See [docs/DESIGN.md](docs/DESIGN.md) for design and version-specific hooks, or [AGENTS.md](AGENTS.md) for maintenance guidance.
 
 ## License
 
-GPL-3.0-or-later, see [LICENSE](LICENSE).
-
-The bundled [ResourcePackConverter](https://github.com/agentdid127/ResourcePackConverter) (by agentdid127) is distributed under the MIT license.
+GPL-3.0-or-later. See [LICENSE](LICENSE).

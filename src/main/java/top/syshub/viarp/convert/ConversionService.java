@@ -20,16 +20,17 @@ package top.syshub.viarp.convert;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.zip.ZipException;
 
 import top.syshub.viarp.ViaRpConfig;
 import top.syshub.viarp.ViaRpPaths;
 import top.syshub.viarp.ViaRpLog;
 import top.syshub.viarp.cache.CacheEntryMeta;
-import top.syshub.viarp.cache.CacheIndex;
 import top.syshub.viarp.cache.ConversionCache;
 import top.syshub.viarp.io.PathIo;
 import top.syshub.viarp.io.ZipTool;
@@ -57,7 +58,8 @@ public final class ConversionService {
     private final ViaRpConfig config;
     private final ConversionCache cache;
     private final PackSelection selection;
-    private final AtomicLong workCounter = new AtomicLong();
+    private final PackPlaceholder placeholder;
+    private final Set<String> reportedSkips = new HashSet<String>();
 
     /** 本次运行已经报告过失败的源包，避免每次重载都刷同一条错误日志。 */
     private final Set<String> reportedFailures = new HashSet<String>();
@@ -70,6 +72,7 @@ public final class ConversionService {
         this.config = config;
         this.cache = cache;
         this.selection = selection;
+        this.placeholder = new PackPlaceholder(paths);
     }
 
     public static ConversionService get() {
@@ -80,10 +83,8 @@ public final class ConversionService {
                 if (existing == null) {
                     ViaRpPaths paths = ViaRpPaths.get();
                     ViaRpConfig config = ViaRpConfig.get();
-                    CacheIndex index = new CacheIndex(paths.indexFile());
-                    index.load();
                     existing = new ConversionService(paths, config,
-                            new ConversionCache(paths.cacheDir(), index, config.maxCacheBytes()),
+                            new ConversionCache(paths.cacheDir(), config.maxCacheBytes()),
                             new PackSelection(paths.optionsFile()));
                     instance = existing;
                 }
@@ -112,8 +113,8 @@ public final class ConversionService {
         }
         try {
             return resolveChecked(source, kind);
-        } catch (RuntimeException e) {
-            // 拦截点在原版调用栈里，抛异常会直接崩加载流程，所以这里兜住一切。
+        } catch (IOException | RuntimeException e) {
+            // 拦截点在原版调用栈里，转换失败时回退原路径。
             reportFailureOnce(source, e);
             return source;
         }
@@ -130,7 +131,7 @@ public final class ConversionService {
 
     /**
      * 本地包仅处理客户端 resourcepacks 的直接子项，且默认等到用户启用时才转换。
-     * 现代包在旧客户端上无法读出元数据也不伪装成可正常加载的资源包。
+     * 只给可升版的旧纹理包提供占位；绝不伪装现代资源包的兼容性。
      */
     public Path resolveLocal(Path source) {
         if (source == null || !config.enabled() || !config.convertLocalPacks()
@@ -138,8 +139,15 @@ public final class ConversionService {
             return source;
         }
         try {
-            return isEnabled(source) ? resolve(source, PackKind.LOCAL) : source;
-        } catch (RuntimeException e) {
+            if (isEnabled(source)) {
+                return resolveChecked(source, PackKind.LOCAL);
+            }
+            // 无 pack.mcmeta 的旧纹理包必须先能出现在界面，玩家才有机会启用它。
+            PackFormat target = GameVersion.current().packFormat();
+            PackInput pack = inspect(source);
+            return pack != null && pack.isLegacyTexturePack() && ResourcePackUpgrader.canUpgrade(pack.format(), target)
+                    ? placeholder.create(source, target) : source;
+        } catch (IOException | RuntimeException e) {
             reportFailureOnce(source, e);
             return source;
         }
@@ -170,7 +178,7 @@ public final class ConversionService {
         return resolved == null ? source : resolved.toFile();
     }
 
-    private Path resolveChecked(Path source, PackKind kind) {
+    private Path resolveChecked(Path source, PackKind kind) throws IOException {
         if (!config.enabled()) {
             return source;
         }
@@ -191,41 +199,31 @@ public final class ConversionService {
             return source;
         }
 
-        boolean isZip = Files.isRegularFile(source);
-        if (!isZip && !Files.isDirectory(source)) {
+        PackInput pack = inspect(source);
+        if (pack == null) {
             return source;
         }
-
-        PackMetadata metadata = readMetadata(source, isZip);
-        if (metadata == null) {
-            // 读不到 pack.mcmeta 的东西不是资源包（或已损坏），交给原版处理。
-            return source;
-        }
-        if (!metadata.canUpgradeTo(target)) {
-            if (!metadata.supports(target)) {
-                ViaRpLog.debug("Not upgrading {}: declared formats {}, target {}",
-                        source.getFileName(), metadata.supportedFormats(), target);
+        if (!pack.canUpgradeTo(target) || !ResourcePackUpgrader.canUpgrade(pack.format(), target)) {
+            if (pack.metadata() != null && !pack.metadata().supports(target)) {
+                reportSkipOnce(source, pack.metadata(), target);
             }
             return source;
         }
-        PackFormat from = metadata.primaryFormat();
+        boolean isZip = Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS);
+        return convertCached(source, isZip, pack, target, kind);
+    }
 
-        ConverterEngine engine = ConverterEngines.engine();
-        if (engine == null) {
-            return source;
+    private static PackInput inspect(Path source) throws IOException {
+        boolean zip = Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS);
+        if (!zip && !Files.isDirectory(source, LinkOption.NOFOLLOW_LINKS)) {
+            return null;
         }
-        // 旧引擎在迁移期不能夹取目标版本，更不能把 minor 升级变成降版。
-        if (from.major() < engine.minSupportedMajor() || target.major() > engine.maxSupportedMajor()
-                || from.minor() != 0 || target.minor() != 0) {
-            ViaRpLog.debug("No upgrade route from {} to {} for {}", from, target, source.getFileName());
-            return source;
-        }
-
         try {
-            return convertCached(source, isZip, from, target, engine, kind);
-        } catch (IOException e) {
-            reportFailureOnce(source, e);
-            return source;
+            PackInput pack = PackInput.inspect(source, zip);
+            return pack.metadata() != null || pack.isLegacyTexturePack() ? pack : null;
+        } catch (ZipException e) {
+            // 资源包目录也可能只是普通文件；非 ZIP 交由原版处理。
+            return null;
         }
     }
 
@@ -248,168 +246,86 @@ public final class ConversionService {
         if (!target.isKnown()) {
             return null;
         }
-        return cache.lookup(ConversionCache.cacheKey(sourceSha1.toLowerCase(java.util.Locale.ROOT),
-                target.major()), true);
-    }
-
-    private Path convertCached(Path source, boolean isZip, PackFormat from, PackFormat target,
-                               ConverterEngine engine, PackKind kind) throws IOException {        long size = PathIo.sizeOrMinusOne(source);
-        long modified = PathIo.lastModifiedOrMinusOne(source);
-        CacheIndex index = cache.index();
-
-        // 1. 路径 + 大小 + mtime 命中：完全不必算哈希。
-        String cachedKey = index.lookup(source, size, modified);
-        if (cachedKey != null) {
-            Path payload = cache.lookup(cachedKey, isZip);
-            if (payload != null) {
-                index.touch(source);
-                index.saveIfDirty();
-                return payload;
-            }
-        }
-
-        // 2. 算哈希后再查一次：同一个包换了路径 / 换了 mtime 也能命中。
-        String sha1 = PathIo.sha1(source);
-        String key = ConversionCache.cacheKey(sha1, target.major());
-        Path payload = cache.lookup(key, isZip);
-        if (payload != null) {
-            index.put(source, size, modified, key);
-            index.saveIfDirty();
-            return payload;
-        }
-
-        // 3. 真正转换。
-        synchronized (this) {
-            // 拿到锁后再查一次：可能有别的线程刚转完同一个包。
-            payload = cache.lookup(key, isZip);
-            if (payload != null) {
-                index.put(source, size, modified, key);
-                index.saveIfDirty();
-                return payload;
-            }
-            payload = convert(source, isZip, from, target, engine, key, sha1, size, kind);
-        }
-        index.put(source, size, modified, key);
-        index.saveIfDirty();
-        cache.prune();
-        return payload;
-    }
-
-    private Path convert(Path source, boolean isZip, PackFormat from, PackFormat target,
-                         ConverterEngine engine, String cacheKey, String sha1, long size,
-                         PackKind kind) throws IOException {
-        prepareOnce();
-
-        Path work = paths.workDir().resolve("job-" + workCounter.incrementAndGet());
-        PathIo.deleteQuietly(work);
-        Files.createDirectories(work);
-        Path unpacked = work.resolve("pack");
-
-        long started = System.currentTimeMillis();
-        ViaRpLog.info("Converting {} pack {} from format {} to {}",
-                kind == PackKind.LOCAL ? "local" : "server", source.getFileName(), from, target);
-
         try {
-            if (isZip) {
+            prepareOnce();
+            return cache.lookup(sourceSha1, true, target, ResourcePackUpgrader.RULES_VERSION);
+        } catch (IOException e) {
+            ViaRpLog.debug("Unable to prepare the resource pack cache", e);
+            return null;
+        }
+    }
+
+    private synchronized Path convertCached(Path source, boolean zip, PackInput pack, PackFormat target,
+                                            PackKind kind) throws IOException {
+        prepareOnce();
+        // 即使路径、大小和 mtime 相同，内容也可能被启动器或同步工具覆盖。
+        String sha1 = PathIo.sha1(source);
+        String key = ConversionCache.cacheKey(sha1, zip, target, ResourcePackUpgrader.RULES_VERSION);
+        Path payload = cache.lookup(key, zip);
+        return payload != null ? payload
+                : convert(source, zip, pack, target, key, sha1, PathIo.sizeOrMinusOne(source), kind);
+    }
+
+    private Path convert(Path source, boolean zip, PackInput pack, PackFormat target, String key,
+                         String sha1, long size, PackKind kind) throws IOException {
+        Path work = Files.createTempDirectory(paths.workDir(), "job-");
+        Path unpacked = work.resolve("pack");
+        PackFormat from = pack.format();
+        long started = System.currentTimeMillis();
+        ViaRpLog.info("Upgrading {} pack {} from format {} to {}",
+                kind == PackKind.LOCAL ? "local" : "server", source.getFileName(), from, target);
+        try {
+            if (zip) {
                 ZipTool.extract(source, unpacked);
             } else {
                 PathIo.copyDirectory(source, unpacked);
+                if (!sha1.equals(PathIo.sha1(unpacked))) {
+                    throw new IOException("Resource pack changed during the directory copy");
+                }
+            }
+            PackInput snapshot = PackInput.inspect(unpacked, false);
+            if (!from.equals(snapshot.format()) || !snapshot.canUpgradeTo(target)) {
+                throw new IOException("Resource pack changed while preparing the upgrade");
+            }
+            List<String> warnings = ResourcePackUpgrader.upgrade(unpacked, snapshot, target, config.verbose());
+            for (String warning : warnings) {
+                ViaRpLog.warn("Resource pack {}: {}", source.getFileName(), warning);
             }
 
-            engine.convert(unpacked, from, target, config.verbose());
-
-            rewriteMetadata(unpacked, target);
-
-            Path destination = cache.payloadPath(cacheKey, isZip);
-            PathIo.deleteQuietly(destination);
-            if (isZip) {
+            Path destination = cache.payloadPath(key, zip);
+            if (zip) {
                 Path packed = work.resolve("packed.zip");
                 ZipTool.pack(unpacked, packed);
+                if (!sha1.equals(PathIo.sha1(source))) {
+                    throw new IOException("Resource pack changed during ZIP extraction");
+                }
                 PathIo.move(packed, destination);
             } else {
                 PathIo.move(unpacked, destination);
             }
+            cache.writeMeta(key, new CacheEntryMeta(
+                    source.toAbsolutePath().normalize().toString(), sha1, size,
+                    from.major(), from.minor(), target.major(), target.minor(),
+                    System.currentTimeMillis(), zip ? PathIo.sizeOrMinusOne(destination) : -1L,
+                    zip, ResourcePackUpgrader.RULES_VERSION));
 
-            long payloadSize = isZip
-                    ? PathIo.sizeOrMinusOne(destination)
-                    : -1L;
-            cache.writeMeta(cacheKey, new CacheEntryMeta(
-                    source.toAbsolutePath().normalize().toString(),
-                    sha1,
-                    size,
-                    from.major(),
-                    target.major(),
-                    target.minor(),
-                    engine.describe(),
-                    false,
-                    System.currentTimeMillis(),
-                    payloadSize));
-
-            ViaRpLog.info("Converted {} in {} ms -> {}",
-                    source.getFileName(), System.currentTimeMillis() - started, destination);
+            ViaRpLog.info("Upgraded {} in {} ms -> {} ({} warning(s))", source.getFileName(),
+                    System.currentTimeMillis() - started, destination, warnings.size());
             return destination;
         } finally {
             PathIo.deleteQuietly(work);
         }
     }
 
-    /** 把转换产物的 {@code pack.mcmeta} 改写成目标格式（源包没有则补一份）。 */
-    private void rewriteMetadata(Path unpacked, PackFormat target) throws IOException {
-        Path file = unpacked.resolve("pack.mcmeta");
-        if (!Files.isRegularFile(file)) {
-            PathIo.writeString(file, PackMetadata.minimal(target, "Converted by ViaResourcePack"));
-            return;
-        }
-        String text = PathIo.readString(file);
-        try {
-            PackMetadata metadata = PackMetadata.parse(text);
-            PathIo.writeString(file, metadata.withFormat(target));
-        } catch (IOException e) {
-            // 转换器有可能写出我们读不回来的元数据；此时至少保证 pack_format 正确。
-            ViaRpLog.warn("Rewriting pack.mcmeta from scratch for {}", unpacked, e);
-            PathIo.writeString(file, PackMetadata.minimal(target, "Converted by ViaResourcePack"));
-        }
-    }
-
-    private PackMetadata readMetadata(Path source, boolean isZip) {
-        try {
-            String text = isZip ? readZipEntry(source, "pack.mcmeta") : readDirEntry(source, "pack.mcmeta");
-            if (text == null) {
-                return null;
+    private void reportSkipOnce(Path source, PackMetadata metadata, PackFormat target) {
+        String id = source.toAbsolutePath().normalize() + "|" + metadata.supportedFormats() + "|" + target;
+        synchronized (reportedSkips) {
+            if (!reportedSkips.add(id)) {
+                return;
             }
-            return PackMetadata.parse(text);
-        } catch (IOException e) {
-            ViaRpLog.debug("Could not read pack.mcmeta from {}", source, e);
-            return null;
         }
-    }
-
-    private static String readDirEntry(Path dir, String name) throws IOException {
-        Path file = dir.resolve(name);
-        return Files.isRegularFile(file) ? PathIo.readString(file) : null;
-    }
-
-    private static String readZipEntry(Path zip, String name) throws IOException {
-        java.util.zip.ZipFile file = new java.util.zip.ZipFile(zip.toFile());
-        try {
-            java.util.zip.ZipEntry entry = file.getEntry(name);
-            if (entry == null) {
-                return null;
-            }
-            java.io.InputStream in = file.getInputStream(entry);
-            try {
-                java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-                PathIo.copyStream(in, out);
-                return PathIo.stripBom(new String(out.toByteArray(), java.nio.charset.Charset.forName("UTF-8")));
-            } finally {
-                in.close();
-            }
-        } catch (java.util.zip.ZipException e) {
-            // 不是有效 zip（或加密）：交给原版去报错。
-            return null;
-        } finally {
-            file.close();
-        }
+        ViaRpLog.warn("Not upgrading {}: declared formats {}, current format {}; only known upward routes are supported",
+                source.getFileName(), metadata.supportedFormats(), target);
     }
 
     private synchronized void prepareOnce() throws IOException {
@@ -417,6 +333,8 @@ public final class ConversionService {
             // 只建目录，不清理：占位包此刻可能正被原版持有（见 ViaRpPaths.prepare 的注释），
             // 启动时的那次清理由 ViaRpClient 负责。
             paths.ensureDirectories();
+            // 仅在本次运行尚无装载产物时淘汰；不能删除原版可能正持有的文件。
+            cache.prune();
             prepared = true;
         }
     }
