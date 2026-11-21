@@ -104,6 +104,7 @@ final class ClassicPackUpgrades {
         }
         switch (entered.major()) {
             case 2:
+                ClassicClockTextures.apply(workspace);
                 upgradeModels(workspace);
                 break;
             case 3:
@@ -120,6 +121,7 @@ final class ClassicPackUpgrades {
                 break;
             case 7:
                 renameDirtPath(workspace);
+                copySquidTexture(workspace);
                 break;
             case 8:
                 warnFile(workspace, 8, VANILLA + "textures/gui/container/inventory.png", "新版窄布局药效图块需要作者补画");
@@ -542,6 +544,27 @@ final class ClassicPackUpgrades {
         }
         warnFile(workspace, 7, VANILLA + "textures/entity/zombie/drowned.png", "新版溺尸手臂镜像 UV 已变");
         warnFile(workspace, 7, VANILLA + "textures/entity/zombie/drowned_outer_layer.png", "新版溺尸外层手臂镜像 UV 已变");
+    }
+
+    private static void copySquidTexture(UpgradeWorkspace workspace) throws IOException {
+        String source = VANILLA + "textures/entity/squid.png";
+        if (!workspace.hasFile(source)) {
+            return;
+        }
+        // 早期格式 7 仍读取旧路径；正式 1.17 只换了路径，保留两端的读取位置。
+        String target = VANILLA + "textures/entity/squid/squid.png";
+        Set<String> existing = foldedFiles(workspace.files());
+        if (existing.contains(target) || existing.contains(target + ".mcmeta")
+                || Files.exists(workspace.path(target)) || Files.exists(workspace.path(target + ".mcmeta"))) {
+            warn(workspace, 7, source, "普通鱿鱼的新纹理或侧车已存在，不覆盖 " + target);
+            return;
+        }
+        Path destination = workspace.path(target);
+        Files.createDirectories(destination.getParent());
+        Files.copy(workspace.path(source), destination);
+        if (workspace.hasFile(source + ".mcmeta")) {
+            Files.copy(workspace.path(source + ".mcmeta"), workspace.path(target + ".mcmeta"));
+        }
     }
 
     private static void upgradeAtlas(UpgradeWorkspace workspace) throws IOException {
