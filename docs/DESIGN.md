@@ -46,6 +46,8 @@ PackRepository.reload()
 
 `PackDetector` 是 1.20.2 起本地包探测的共用入口。Mojang 名和擦除后的描述符在 1.20.2 / 1.20.5 / 1.21.4 / 1.21.9 / 1.21.11 / 26.1 / 26.2 / 26.3 上核对一致；26.1 – 26.3 的 `PackDetector` 和调用方 `FolderRepositorySource` 的参考源码内容相同（版本来源见 §2）。
 
+**旧目录的预筛选**：File 家族先用 `class_3279.method_14431(Ljava/io/File;)Z` 过滤候选（目录必须存在根 `pack.mcmeta`），然后才计算原始 `file/<文件名>` 与调用 `createSupplier`。同一个 local mixin 在该静态筛选方法入口只替换参数：对没有元数据、可识别且可升版的旧目录，交给原版谓词检查占位路径。目录遍历仍返回原 File，包 ID 不变，真正的升版仍在 `createSupplier` 判定是否启用后才发生。已交叉核对 1.14.4 / 1.15.2 / 1.16 / 1.18.2 / 1.19.2 的原版字节码与 intermediary 指纹。Path 家族的拦截点位于探测入口，不需要这次预筛选替换。
+
 **类型守卫**：`PackDetector` 不知道自己在探测资源包还是数据包。判据是**目录归属**——只有 `path.getParent()` 恰好等于客户端 `resourcepacks` 目录时才转换（`ViaRpPaths.isInResourcePacksDir`）。世界数据包（`<world>/datapacks`）、`ServerPacksSource`、内置包因此自然被排除，不需要读调用栈或猜 `PackType`。
 
 ### 1.2.1 「安装时」而不是「列出时」

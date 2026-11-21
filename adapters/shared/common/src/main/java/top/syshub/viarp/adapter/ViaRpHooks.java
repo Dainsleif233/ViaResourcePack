@@ -66,6 +66,16 @@ public final class ViaRpHooks {
         }
     }
 
+    /** File 家族只在原版预筛选时借用占位路径，不改变列出的原始 File。 */
+    public static File legacyFolderForListing(File source) {
+        try {
+            return ConversionService.get().resolveLegacyFolderForListing(source);
+        } catch (Throwable failure) {
+            logAndIgnore(source, failure);
+            return source;
+        }
+    }
+
     /** 服务器下发或世界捆绑的资源包。 */
     public static Path serverPack(Path source) {
         try {

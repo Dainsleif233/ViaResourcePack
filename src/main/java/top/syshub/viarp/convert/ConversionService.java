@@ -153,6 +153,30 @@ public final class ConversionService {
         }
     }
 
+    /**
+     * 旧 File 适配器借占位目录通过原版的预筛选。不在这里转包，也不替换列表中的原目录。
+     */
+    public File resolveLegacyFolderForListing(File source) {
+        if (source == null || !config.enabled() || !config.convertLocalPacks()) {
+            return source;
+        }
+        Path folder = source.toPath();
+        if (!paths.isInResourcePacksDir(folder) || paths.isOwnOutput(folder)
+                || !Files.isDirectory(folder, LinkOption.NOFOLLOW_LINKS)
+                || Files.exists(folder.resolve("pack.mcmeta"), LinkOption.NOFOLLOW_LINKS)) {
+            return source;
+        }
+        try {
+            PackFormat target = GameVersion.current().packFormat();
+            PackInput pack = inspect(folder);
+            return pack != null && pack.isLegacyTexturePack() && ResourcePackUpgrader.canUpgrade(pack.format(), target)
+                    ? placeholder.create(folder, target).toFile() : source;
+        } catch (IOException | RuntimeException e) {
+            reportFailureOnce(folder, e);
+            return source;
+        }
+    }
+
     /** [source] 是否出现在 {@code options.txt} 的已启用列表里。 */
     private boolean isEnabled(Path source) {
         if (!config.onlyConvertEnabledPacks()) {

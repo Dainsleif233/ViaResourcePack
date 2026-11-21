@@ -38,6 +38,16 @@ import top.syshub.viarp.adapter.ViaRpHooks;
 @Mixin(FolderRepositorySource.class)
 public class FolderRepositorySourceMixin {
 
+    // 原版先按 pack.mcmeta 预筛选目录；这个方法的参数不参与外层包 ID 计算。
+    @ModifyVariable(
+            method = "method_14431(Ljava/io/File;)Z",
+            at = @At("HEAD"),
+            argsOnly = true
+    )
+    private static File viarp$recognizeLegacyFolder(File file) {
+        return ViaRpHooks.legacyFolderForListing(file);
+    }
+
     @ModifyVariable(
             method = "createSupplier(Ljava/io/File;)Ljava/util/function/Supplier;",
             at = @At("HEAD"),
