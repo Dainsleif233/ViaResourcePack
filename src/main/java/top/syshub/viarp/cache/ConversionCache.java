@@ -38,6 +38,7 @@ import top.syshub.viarp.pack.PackFormat;
  *   cache/v2-&lt;sourceSha1&gt;-&lt;zip|dir&gt;-&lt;targetMajor&gt;-&lt;targetMinor&gt;-&lt;rulesFingerprint&gt;/
  *       pack.zip | pack/        转换产物（源是 zip 则为 zip，源是目录则为目录）
  *       meta.json              见 {@link CacheEntryMeta}
+ *       warnings.txt           有诊断时写入；不属于资源包内容
  * </pre>
  *
  * <p>源文件继续使用 SHA-1，以支持旧版服务器包下载去重；目标格式和规则版本隔离不同转换产物。

@@ -194,7 +194,7 @@ mixin 源码不放在各适配器目录下，而是集中在 `adapters/shared/{c
 
 ## 4. 缓存
 
-缓存根目录为 `<gameDir>/config/viaresourcepack/`，可用 `-Dviarp.cacheDir` 覆盖。条目路径含源 SHA-1、ZIP/目录形态、完整目标格式和内置规则指纹，`meta.json` 必须与键匹配。ZIP 按原始字节计算 SHA-1，以兼容旧版服务器声明；目录散列排序后的类型、相对路径和定长文件摘要。缓存命中不依赖文件的 mtime。
+缓存根目录为 `<gameDir>/config/viaresourcepack/`，可用 `-Dviarp.cacheDir` 覆盖。条目路径含源 SHA-1、ZIP/目录形态、完整目标格式和内置规则指纹，`meta.json` 必须与键匹配。ZIP 按原始字节计算 SHA-1，以兼容旧版服务器声明；目录散列排序后的类型、相对路径和定长文件摘要。缓存命中不依赖文件的 mtime。检测到迁移问题时，把有限的 UTF-8 `warnings.txt` 与产物放在同一缓存条目中，再写完才允许命中的 `meta.json`。报告不进包，日志只预览前 8 条并标出报告路径。
 
 ZIP 产物按路径排序且时间戳固定；目录仍输出为目录。同一运行中仅在首次使用缓存前按大小上限淘汰最早创建的条目，避免删掉原版已拿到的产物。退出游戏后删 `cache/` 不影响源包。
 

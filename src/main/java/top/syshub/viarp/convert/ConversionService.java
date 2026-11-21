@@ -52,6 +52,8 @@ import top.syshub.viarp.pack.PackSelection;
  */
 public final class ConversionService {
 
+    private static final int MAX_LOGGED_WARNINGS = 8;
+
     private static volatile ConversionService instance;
 
     private final ViaRpPaths paths;
@@ -312,10 +314,6 @@ public final class ConversionService {
                 throw new IOException("Resource pack changed while preparing the upgrade");
             }
             List<String> warnings = ResourcePackUpgrader.upgrade(unpacked, snapshot, target, config.verbose());
-            for (String warning : warnings) {
-                ViaRpLog.warn("Resource pack {}: {}", source.getFileName(), warning);
-            }
-
             Path destination = cache.payloadPath(key, zip);
             if (zip) {
                 Path packed = work.resolve("packed.zip");
@@ -327,14 +325,26 @@ public final class ConversionService {
             } else {
                 PathIo.move(unpacked, destination);
             }
+            Path diagnostics = destination.resolveSibling("warnings.txt");
+            if (!warnings.isEmpty()) {
+                Path report = work.resolve("warnings.txt");
+                PathIo.writeString(report, String.join("\n", warnings) + "\n");
+                PathIo.move(report, diagnostics);
+            }
             cache.writeMeta(key, new CacheEntryMeta(
                     source.toAbsolutePath().normalize().toString(), sha1, size,
                     from.major(), from.minor(), target.major(), target.minor(),
                     System.currentTimeMillis(), zip ? PathIo.sizeOrMinusOne(destination) : -1L,
                     zip, ResourcePackUpgrader.RULES_VERSION));
 
-            ViaRpLog.info("Upgraded {} in {} ms -> {} ({} warning(s))", source.getFileName(),
-                    System.currentTimeMillis() - started, destination, warnings.size());
+            if (!warnings.isEmpty()) {
+                for (int i = 0; i < Math.min(MAX_LOGGED_WARNINGS, warnings.size()); i++) {
+                    ViaRpLog.warn("Resource pack {}: {}", source.getFileName(), warnings.get(i));
+                }
+                ViaRpLog.warn("Resource pack {}: recorded migration diagnostics in {}", source.getFileName(), diagnostics);
+            }
+            ViaRpLog.info("Upgraded {} in {} ms -> {}", source.getFileName(),
+                    System.currentTimeMillis() - started, destination);
             return destination;
         } finally {
             PathIo.deleteQuietly(work);

@@ -40,8 +40,12 @@ import top.syshub.viarp.io.PathIo;
 /** 迁移只能修改已隔离的工作树；逻辑路径统一用 '/'，不得隐式覆盖其他资源。 */
 final class UpgradeWorkspace {
 
+    private static final int MAX_WARNINGS = 256;
+    private static final int MAX_WARNING_LENGTH = 2048;
+
     private final Path root;
     private final Set<String> warnings = new LinkedHashSet<String>();
+    private boolean warningsTruncated;
 
     UpgradeWorkspace(Path root) {
         this.root = root.toAbsolutePath().normalize();
@@ -143,11 +147,30 @@ final class UpgradeWorkspace {
     }
 
     void warn(String diagnostic) {
-        warnings.add(diagnostic);
+        // 文件名可能来自任意输入；限制体积并保证一条诊断只占一行。
+        int length = Math.min(MAX_WARNING_LENGTH, diagnostic.length());
+        StringBuilder singleLine = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            char c = diagnostic.charAt(i);
+            singleLine.append(Character.isISOControl(c) || c == '\u2028' || c == '\u2029' ? ' ' : c);
+        }
+        if (length < diagnostic.length()) {
+            singleLine.append("…");
+        }
+        String message = singleLine.toString();
+        if (warnings.size() < MAX_WARNINGS) {
+            warnings.add(message);
+        } else if (!warnings.contains(message)) {
+            warningsTruncated = true;
+        }
     }
 
     List<String> warnings() {
-        return new ArrayList<String>(warnings);
+        List<String> result = new ArrayList<String>(warnings);
+        if (warningsTruncated) {
+            result.add("Additional migration diagnostics were omitted (limit: " + MAX_WARNINGS + ").");
+        }
+        return result;
     }
 
     private static String fold(String path) {

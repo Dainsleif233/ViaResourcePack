@@ -53,7 +53,7 @@ Caches and temporary files live under `<game dir>/config/viaresourcepack/`; you 
 
 ## Known limitations
 
-Only assets with known equivalents can be migrated automatically. Unmapped cells in old texture atlases, removed resources, and some custom models, shaders and mod-specific formats may need manual work. Check the log for detected cases the upgrader leaves untouched.
+Only assets with known equivalents can be migrated automatically. Unmapped cells in old texture atlases, removed resources, and some custom models, shaders and mod-specific formats may need manual work. The log lists detected issues and points to `warnings.txt` next to the cached pack, where the report remains available on cache hits.
 
 The first upgrade runs during resource loading and may pause the game for large packs. Later loads can reuse the cached result. If Minecraft 26.x logs that it removed a stale incompatibility flag but does not load the pack in that pass, re-enable it in the pack screen or exit normally and restart.
 
