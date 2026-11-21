@@ -464,30 +464,60 @@ final class LegacyTextureUpgrade {
 
     private static final class Rules {
         static final Map<String, List<String>> PATHS = readPaths();
-        static final Map<Integer, String> BLOCK_TILES = new LinkedHashMap<Integer, String>();
-        static final Map<Integer, String> ITEM_TILES = new LinkedHashMap<Integer, String>();
+        static final Map<Integer, String> BLOCK_TILES;
+        static final Map<Integer, String> ITEM_TILES;
 
         static {
-            // 原版渲染注册/分面及资产交叉核验，详见 docs/research/legacy-texture-packs.md §5。
-            BLOCK_TILES.put(0, "grass_top");
-            BLOCK_TILES.put(1, "stone");
-            BLOCK_TILES.put(2, "dirt");
-            BLOCK_TILES.put(3, "grass_side");
-            BLOCK_TILES.put(17, "bedrock");
-            BLOCK_TILES.put(32, "oreGold");
-            BLOCK_TILES.put(33, "oreIron");
-            BLOCK_TILES.put(34, "oreCoal");
-            BLOCK_TILES.put(37, "obsidian");
-            BLOCK_TILES.put(49, "glass");
-            BLOCK_TILES.put(50, "oreDiamond");
-            ITEM_TILES.put(10, "apple");
-            ITEM_TILES.put(22, "brick");
-            ITEM_TILES.put(23, "ingotIron");
-            ITEM_TILES.put(24, "feather");
-            ITEM_TILES.put(25, "wheat");
-            ITEM_TILES.put(30, "slimeball");
-            ITEM_TILES.put(37, "arrow");
-            ITEM_TILES.put(39, "ingotGold");
+            Map<Integer, String> blocks = new LinkedHashMap<Integer, String>();
+            Map<Integer, String> items = new LinkedHashMap<Integer, String>();
+            readAtlas(blocks, items);
+            BLOCK_TILES = Collections.unmodifiableMap(blocks);
+            ITEM_TILES = Collections.unmodifiableMap(items);
+        }
+
+        private static void readAtlas(Map<Integer, String> blocks, Map<Integer, String> items) {
+            String resource = "/viarp/migrations/legacy/atlas-shared.tsv";
+            InputStream input = LegacyTextureUpgrade.class.getResourceAsStream(resource);
+            if (input == null) {
+                throw new IllegalStateException("Missing legacy atlas rules: " + resource);
+            }
+            Set<String> sources = new HashSet<String>();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    String[] fields = line.split("\t", -1);
+                    if (fields.length != 4 || (!"terrain".equals(fields[0]) && !"items".equals(fields[0]))) {
+                        throw new IOException("Malformed legacy atlas rule: " + line);
+                    }
+                    boolean terrain = "terrain".equals(fields[0]);
+                    Map<Integer, String> tiles = terrain ? blocks : items;
+                    int x = coordinate(fields[1]);
+                    int y = coordinate(fields[2]);
+                    String source = (terrain ? BLOCKS : ITEMS) + fields[3] + ".png";
+                    List<String> targets = PATHS.get(source);
+                    if (targets == null || targets.isEmpty() || !sources.add(source)
+                            || tiles.put(x + GRID * y, fields[3]) != null) {
+                        throw new IOException("Duplicate or unresolved legacy atlas rule: " + line);
+                    }
+                }
+                if (blocks.isEmpty() || items.isEmpty()) {
+                    throw new IOException("Missing terrain or item atlas coordinates");
+                }
+            } catch (IOException e) {
+                throw new IllegalStateException("Cannot load legacy atlas rules: " + resource, e);
+            }
+        }
+
+        private static int coordinate(String field) throws IOException {
+            try {
+                int value = Integer.parseInt(field);
+                if (value >= 0 && value < GRID) {
+                    return value;
+                }
+            } catch (NumberFormatException e) {
+                throw new IOException("Invalid legacy atlas coordinate: " + field, e);
+            }
+            throw new IOException("Out-of-range legacy atlas coordinate: " + field);
         }
 
         private static Map<String, List<String>> readPaths() {

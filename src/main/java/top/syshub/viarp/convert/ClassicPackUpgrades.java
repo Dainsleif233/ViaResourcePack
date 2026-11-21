@@ -158,7 +158,13 @@ final class ClassicPackUpgrades {
     }
 
     private static void upgradeModels(UpgradeWorkspace workspace) throws IOException {
-        for (String file : workspace.files()) {
+        List<String> files = workspace.files();
+        // builtin/generated 仍是有效的生成标记。只在整条原版父链均未被包覆盖时替换，
+        // 否则可能改变继承语义，或让生成根经由包内模型（包括其他命名空间）指回自己。
+        boolean vanillaGenerated = !files.contains(VANILLA + "models/item/generated.json");
+        boolean vanillaHandheld = vanillaGenerated && !files.contains(VANILLA + "models/item/handheld.json");
+        boolean vanillaHandheldRod = vanillaHandheld && !files.contains(VANILLA + "models/item/handheld_rod.json");
+        for (String file : files) {
             if (!isAsset(file, "/models/", ".json")) {
                 continue;
             }
@@ -170,10 +176,12 @@ final class ClassicPackUpgrades {
             boolean rod = file.equals(VANILLA + "models/item/fishing_rod.json");
             boolean changed = false;
             if ("builtin/generated".equals(parent) || "minecraft:builtin/generated".equals(parent)) {
-                String target = rod ? "item/handheld_rod"
-                        : file.equals(VANILLA + "models/item/diamond_sword.json") ? "item/handheld" : "item/generated";
-                model.put("parent", ((String) parent).startsWith("minecraft:") ? "minecraft:" + target : target);
-                changed = true;
+                boolean sword = file.equals(VANILLA + "models/item/diamond_sword.json");
+                if (rod ? vanillaHandheldRod : sword ? vanillaHandheld : vanillaGenerated) {
+                    String target = rod ? "item/handheld_rod" : sword ? "item/handheld" : "item/generated";
+                    model.put("parent", ((String) parent).startsWith("minecraft:") ? "minecraft:" + target : target);
+                    changed = true;
+                }
                 if (!model.containsKey("overrides")) {
                     if (file.equals(VANILLA + "models/item/bow.json")) {
                         List<Object> overrides = new ArrayList<Object>();
@@ -181,10 +189,12 @@ final class ClassicPackUpgrades {
                         overrides.add(override("pulling", "item/bow_pulling_1", 0.65));
                         overrides.add(override("pulling", "item/bow_pulling_2", 0.9));
                         model.put("overrides", overrides);
+                        changed = true;
                     } else if (rod) {
                         List<Object> overrides = new ArrayList<Object>();
                         overrides.add(override("cast", "item/fishing_rod_cast", null));
                         model.put("overrides", overrides);
+                        changed = true;
                     }
                 }
             } else if ("builtin/clock".equals(parent) || "builtin/compass".equals(parent)
