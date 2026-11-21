@@ -25,6 +25,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 
 import top.syshub.viarp.ViaRpLog;
 import top.syshub.viarp.io.PathIo;
@@ -90,13 +92,17 @@ public final class ConversionCache {
             return null;
         }
         try {
-            if (!isDirectChild(cacheDir, dir) || !cacheKey.equals(CacheEntryMeta.read(dir).entryKey())) {
+            if (!isDirectChild(cacheDir, dir)) {
+                return null;
+            }
+            CacheEntryMeta meta = CacheEntryMeta.read(dir);
+            if (!cacheKey.equals(meta.entryKey())) {
                 return null;
             }
             Path payload = dir.resolve(wantZip ? ZIP_PAYLOAD : DIR_PAYLOAD);
             boolean rightShape = wantZip ? Files.isRegularFile(payload, LinkOption.NOFOLLOW_LINKS)
                     : Files.isDirectory(payload, LinkOption.NOFOLLOW_LINKS);
-            if (rightShape && isDirectChild(dir, payload)) {
+            if (rightShape && isDirectChild(dir, payload) && hasPackMetadata(payload, meta)) {
                 return payload;
             }
         } catch (IOException e) {
@@ -104,6 +110,21 @@ public final class ConversionCache {
             ViaRpLog.debug("Ignoring unusable cache entry {}", dir, e);
         }
         return null;
+    }
+
+    /** 拦住截断 ZIP 和失去根声明的产物；不重新计算所有资源的摘要。 */
+    private static boolean hasPackMetadata(Path payload, CacheEntryMeta meta) throws IOException {
+        if (!meta.zip) {
+            Path metadata = payload.resolve("pack.mcmeta");
+            return Files.isRegularFile(metadata, LinkOption.NOFOLLOW_LINKS) && Files.size(metadata) > 0;
+        }
+        if (meta.payloadSize <= 0 || Files.size(payload) != meta.payloadSize) {
+            return false;
+        }
+        try (ZipFile archive = new ZipFile(payload.toFile())) {
+            ZipEntry metadata = archive.getEntry("pack.mcmeta");
+            return metadata != null && !metadata.isDirectory() && metadata.getSize() > 0;
+        }
     }
 
     /** 目标产物应该写到的位置（zip 或目录）。 */
