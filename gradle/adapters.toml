@@ -74,7 +74,7 @@ serverHook = "loadRequestedPacks"
 
 [[mc]]
 version = "26.1"
-covers = "26.1 - 26.2"
+covers = "26.1 - 26.3"
 obfuscated = false
 java = 25
 localHook = "packDetector"

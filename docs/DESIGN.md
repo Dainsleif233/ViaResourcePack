@@ -18,7 +18,7 @@
 选 C 的三个理由：
 
 1. **兼容加速解压类 mod**。PackForge 这类 mod 的 hook 全在 `FilePackResources` 与 `FilePackResources$SharedZipFileAccess` 内部（`getResource` 里的 `ZipFile.getEntry`、`listResources` 里的 `entries()`、ZIP 读句柄池）。我们不碰这些类，只改「打开哪个文件」，因此它们照常对我们产出的转换后 zip 建索引——两者叠加生效，而不是互斥。
-2. **跨版本改动面最小**。被替换的那个参数在 1.14.4 – 26.2 全程只是 `java.io.File` 或 `java.nio.file.Path`，除了 File→Path 之外没有语义变化。原版后续的 symlink 校验、zip/目录判定、`pack.mcmeta` 读取、`PackResources` 构造全都自然作用在新文件上。
+2. **跨版本改动面最小**。本地拦截替换的参数在 1.14.4 – 26.3 全程只是 `java.io.File` 或 `java.nio.file.Path`，除了 File→Path 之外没有语义变化。原版后续的 symlink 校验、zip/目录判定、`pack.mcmeta` 读取、`PackResources` 构造全都自然作用在新文件上。
 3. **天然覆盖服务器包的哈希缓存命中**。见 §1.3。
 
 ### 1.2 本地资源包（`resourcepacks/`）
@@ -35,15 +35,16 @@ PackRepository.reload()
      └─ Pack.readMetaAndCreate(...) → output.accept(pack)
 ```
 
-拦截点随版本落在三处（下表的 intermediary 名与描述符已对每个版本的官方映射表 + intermediary v2 交叉验证；`localHook` 是 `gradle/adapters.toml` 里的取值）：
+拦截点随版本落在三处（混淆版本用官方映射表 + intermediary v2 交叉验证；26.1+ 直接使用游戏 jar 中的类名和方法名；`localHook` 是 `gradle/adapters.toml` 里的取值）：
 
 | MC 区间         | `localHook`      | 目标方法                                                                          | 描述符                                                     |
 |-----------------|------------------|-----------------------------------------------------------------------------------|------------------------------------------------------------|
 | 1.14.4 – 1.19.2 | `createSupplier` | `class_3279.method_14432`（`FolderRepositorySource.createSupplier`）              | `(Ljava/io/File;)Ljava/util/function/Supplier;`            |
 | 1.19.3 – 1.20.1 | `folderDetector` | `class_3279.method_45269`（`FolderRepositorySource.detectPackResources`，static） | `(Ljava/nio/file/Path;Z)Lclass_3288$class_7680;`           |
-| 1.20.2 – 26.2   | `packDetector`   | `class_8621.method_52441`（`PackDetector.detectPackResources`）                   | `(Ljava/nio/file/Path;Ljava/util/List;)Ljava/lang/Object;` |
+| 1.20.2 – 1.21.11 | `packDetector`   | `class_8621.method_52441`（`PackDetector.detectPackResources`）                   | `(Ljava/nio/file/Path;Ljava/util/List;)Ljava/lang/Object;` |
+| 26.1 – 26.3      | `packDetector`   | `net.minecraft.server.packs.repository.PackDetector.detectPackResources`        | `(Ljava/nio/file/Path;Ljava/util/List;)Ljava/lang/Object;` |
 
-`PackDetector` 是 1.20.2 之后所有本地包的唯一漏斗，且签名从 1.20.2 到 26.2 **一个字符都没变**（已在 1.20.2 / 1.20.5 / 1.21.4 / 1.21.9 / 1.21.11 / 26.1 / 26.2 上逐一确认），是整个区间里最稳的一个点。
+`PackDetector` 是 1.20.2 起本地包探测的共用入口。Mojang 名和擦除后的描述符在 1.20.2 / 1.20.5 / 1.21.4 / 1.21.9 / 1.21.11 / 26.1 / 26.2 / 26.3 上核对一致；26.1 – 26.3 的 `PackDetector` 和调用方 `FolderRepositorySource` 的参考源码内容相同（版本来源见 §2）。
 
 **类型守卫**：`PackDetector` 不知道自己在探测资源包还是数据包。判据是**目录归属**——只有 `path.getParent()` 恰好等于客户端 `resourcepacks` 目录时才转换（`ViaRpPaths.isInResourcePacksDir`）。世界数据包（`<world>/datapacks`）、`ServerPacksSource`、内置包因此自然被排除，不需要读调用栈或猜 `PackType`。
 
@@ -63,7 +64,7 @@ PackSelectionScreen.onClose
               └─ PackRepository.reload() → 拦截点     ← 读到的已经是新列表
 ```
 
-`save()` 排在 `reloadResourcePacks()` **之前**，这个顺序 1.14.4 – 26.2 全程未变（1.14.4 是 `ResourcePackSelectScreen` 的 Done 按钮里手写的 `options.save()` + `reloadResourcePacks()`，1.16+ 收敛进 `Options.updateResourcePacks`）。因此拦截点读 `options.txt` 一定能看到玩家刚勾上的包；反之只是浏览界面时文件不变，未启用的包自然不转换。
+`save()` 排在 `reloadResourcePacks()` **之前**，这个顺序在 1.14.4 – 26.3 全程未变（1.14.4 是 `ResourcePackSelectScreen` 的 Done 按钮里手写的 `options.save()` + `reloadResourcePacks()`，1.16+ 收敛进 `Options.updateResourcePacks`）。因此拦截点读 `options.txt` 一定能看到玩家刚勾上的包；反之只是浏览界面时文件不变，未启用的包自然不转换。
 
 `PackSelection` 按 mtime + 大小缓存这一行，界面里改完选择会自动重读。包 id 认 `file/<文件名>`（1.14.4 起 `FolderRepositorySource` 固定这个前缀）与裸文件名两种形态——`Options.loadSelectedResourcePacks` 至今仍兼容后者。匹配 `resourcePacks:` 时必须精确比键名：`incompatibleResourcePacks` 以同样的子串结尾。
 
@@ -121,12 +122,15 @@ ClientCommonPacketListenerImpl.handleResourcePackPush
 |---|---|---|---|---|
 | 1.14.4 – 1.19.2 | `setServerPack` | `class_1066.method_4638`（`ClientPackSource.setServerPack`） | `(Ljava/io/File;[Lclass_5352;])...` | `File` |
 | 1.19.3 – 1.20.2 | `setServerPackDownloaded` | `class_1066.method_4638`（`net.minecraft.client.resources.DownloadedPackSource.setServerPack`） | `(Ljava/io/File;Lclass_5352;)Ljava/util/concurrent/CompletableFuture;` | `File` |
-| 1.20.3 – 26.2 | `loadRequestedPacks` | `class_1066.method_55519`（`net.minecraft.client.resources.server.DownloadedPackSource.loadRequestedPacks`） | `(Ljava/util/List;)Ljava/util/List;` | `List<IdAndPath>` |
+| 1.20.3 – 1.21.11 | `loadRequestedPacks` | `class_1066.method_55519`（`net.minecraft.client.resources.server.DownloadedPackSource.loadRequestedPacks`） | `(Ljava/util/List;)Ljava/util/List;` | `List<IdAndPath>` |
+| 26.1 – 26.3 | `loadRequestedPacks` | `net.minecraft.client.resources.server.DownloadedPackSource.loadRequestedPacks` | `(Ljava/util/List;)Ljava/util/List;` | `List<IdAndPath>` |
 
 两点需要留意：
 
-- `class_1066` 这个 intermediary 编号一路沿用，但它背后的 Mojang 类名换过两次：1.14.4 – 1.19.2 是 `ClientPackSource`，1.19.3 – 1.20.2 是 `client.resources.DownloadedPackSource`（同时 `ClientPackSource` 变成了 `class_1065`），1.20.3+ 又搬到 `client.resources.server.DownloadedPackSource`。因此三个 hook 是三份 mixin，但目标类在 intermediary 下是同一个。
+- 混淆版本中 `class_1066` 这个 intermediary 编号一路沿用，但它背后的 Mojang 类名换过两次：1.14.4 – 1.19.2 是 `ClientPackSource`，1.19.3 – 1.20.2 是 `client.resources.DownloadedPackSource`（同时 `ClientPackSource` 变成了 `class_1065`），1.20.3+ 又搬到 `client.resources.server.DownloadedPackSource`。因此三个 hook 是三份 mixin，但目标类在 intermediary 下是同一个。
 - 1.14.4/1.15 的 `setServerPack` 只有一个 `File` 参数，1.16 起多了 `PackSource`。mixin 用不带描述符的 `method = "setServerPack"` 按名匹配，`argsOnly = true` + `File` 参数类型确保只改到文件参数，因此两代签名共用一份 mixin。
+
+26.3 的 `DownloadedPackSource.loadRequestedPacks` 仍用 `IdAndPath.path()` 构造 `FileResourcesSupplier`；`PackReloadConfig.IdAndPath` 仍是 `(UUID id, Path path)`，构造器和访问器不需适配。
 
 `setServerPack` 与 `loadRequestedPacks` 都在**哈希校验之后**，所以「哈希命中 → 直接加载本地已下载包」这条路径同样被替换。
 
@@ -171,7 +175,7 @@ checkHash(declaredHash, file);              // 之后才校验内容
 
 ## 2. 版本适配矩阵
 
-按「拦截点签名指纹」分族。指纹的算法：官方映射表（Mojang 名 → obf）→ intermediary v2（obf → `class_`/`method_`），描述符也一并映射后逐版本比对，相邻版本指纹相同则合并。
+按「拦截点签名指纹」分族。混淆版本用官方映射表（Mojang 名 → obf）→ intermediary v2（obf → `class_`/`method_`），描述符也一并映射后逐版本比对；26.1+ 直接比对类名、方法名和描述符。指纹和构建目标兼容的相邻版本共用一个适配器。
 
 | 适配器目录 | 覆盖版本         | localHook        | serverHook                | 混淆 | Java |
 |------------|------------------|------------------|---------------------------|------|------|
@@ -181,9 +185,11 @@ checkHash(declaredHash, file);              // 之后才校验内容
 | `1.20.2`   | 1.20.2           | `packDetector`   | `setServerPackDownloaded` | 是   | 17   |
 | `1.20.3`   | 1.20.3 – 1.20.4  | `packDetector`   | `loadRequestedPacks`      | 是   | 17   |
 | `1.20.5`   | 1.20.5 – 1.21.11 | `packDetector`   | `loadRequestedPacks`      | 是   | 21   |
-| `26.1`     | 26.1 – 26.2      | `packDetector`   | `loadRequestedPacks`      | 否   | 25   |
+| `26.1`     | 26.1 – 26.3      | `packDetector`   | `loadRequestedPacks`      | 否   | 25   |
 
 七个适配器共用同一个 mod id `viarp-adapter-mc`，版本号 `<modVersion>-<mcVersion>`，`depends.minecraft` 写 `>=<mcVersion>`。Fabric Loader 在同 id 候选中挑「满足依赖且版本最高」的一个，因此跑在 1.21.4 时只有 `1.20.5` 适配器被选中（`26.1` 因 `minecraft >= 26.1` 不满足而淘汰）。`:validateAdapterMatrix` 会把这套选择逻辑模拟一遍。
+
+26.3 复用 `26.1` 适配器：Minecraft 参考仓库的 26.3 版本提交 `634debadbbb7d440370f6ad29a86d1587058ce76` 中，两处目标及路径参数的用法均未改变，原有 `>=26.1` 已匹配，无需新增适配器。[Mojang 的 26.3 版本元数据](https://piston-meta.mojang.com/v1/packages/ead839cbccf0ddf013c3f935f2840080b5cb0d26/26.3.json) 确认 Java 25（`java-runtime-epsilon`），且未发布 `client_mappings`。
 
 mixin 源码不放在各适配器目录下，而是集中在 `adapters/shared/{common,local/<hook>,server/<hook>}`，由 `viarp.mc.adapter` 插件按矩阵挂进对应适配器的 sourceSet。这样「1.20.3 与 1.20.5 的 hook 完全相同」这件事在源码层面就是同一份文件，不会漂移。
 
