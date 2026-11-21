@@ -77,7 +77,7 @@ public final class PackMetadata {
         return supported;
     }
 
-    /** 旧主声明或现代区间下界，作为迁移基准；不能拿它代替整个兼容区间。 */
+    /** 旧主声明或现代区间下界；不能拿它代替整个兼容区间。 */
     public PackFormat primaryFormat() {
         return supported.contains(legacyFormat) ? legacyFormat : supported.min();
     }

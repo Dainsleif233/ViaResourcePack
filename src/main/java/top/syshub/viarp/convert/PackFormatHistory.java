@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.List;
 
 import top.syshub.viarp.pack.PackFormat;
+import top.syshub.viarp.pack.PackFormatRange;
 
 /** 已实际发行的主线资源包格式；跳号不是转换节点，minor 不能折叠。 */
 final class PackFormatHistory {
@@ -45,6 +46,17 @@ final class PackFormatHistory {
 
     static boolean knows(PackFormat format) {
         return Collections.binarySearch(RELEASED, format) >= 0;
+    }
+
+    /** 在声明闭区间中选择最新的已发行客户端格式，不把最大 minor 通配符当节点。 */
+    static PackFormat latestDeclared(PackFormatRange range) {
+        int upper = Collections.binarySearch(RELEASED, range.max());
+        int index = upper >= 0 ? upper : -upper - 2;
+        if (index < 0) {
+            return PackFormat.UNKNOWN;
+        }
+        PackFormat candidate = RELEASED.get(index);
+        return candidate.major() > 0 && range.contains(candidate) ? candidate : PackFormat.UNKNOWN;
     }
 
     static List<PackFormat> route(PackFormat from, PackFormat target) {

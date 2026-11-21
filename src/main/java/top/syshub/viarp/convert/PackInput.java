@@ -170,7 +170,7 @@ final class PackInput {
         }
         String text = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(buffer.toByteArray())).toString();
         PackMetadata metadata = PackMetadata.parse(text);
-        return new PackInput(metadata, metadata.primaryFormat());
+        return new PackInput(metadata, PackFormatHistory.latestDeclared(metadata.supportedFormats()));
     }
 
     private static PackInput legacy(boolean atlas, boolean loose) {
