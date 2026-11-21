@@ -4,8 +4,9 @@
 # 来源：InventivetalentDev/minecraft-assets 原版镜像 Git 树：
 # 1.12.2 3360cc4a4e7be0183be2fae38622dfece4468401，1.14.4 c695cf61f2ac932b07a41a6e00835af6890e03bb。
 # 1.13 b42fce915639d94144c62fffe940b000b81fe185。
-# 仅同名 PNG 或可明确确认的木板/羊毛/唱片/草地/弓钓竿；
+# 原有条目为同名 PNG 或可明确确认的木板/羊毛/唱片/草地/弓钓竿等对应项；
 # 1.12.2 的 PNG blob 与 1.13/1.14.4 之一相同，并验证目标路径存在于 1.14.4。
+# atlas 补齐项另以 Mojang 官方客户端的 PNG 与模型消费槽核对；见 docs/research/atlas-format-4-paths.md。
 # 旧纹理 ID	新纹理 ID（minecraft 命名空间；PNG 与侧车使用同一规则）
 blocks/beacon	block/beacon
 blocks/bedrock	block/bedrock
@@ -64,6 +65,10 @@ blocks/diamond_block	block/diamond_block
 blocks/diamond_ore	block/diamond_ore
 blocks/dirt	block/dirt
 blocks/dispenser_front_vertical	block/dispenser_front_vertical
+blocks/door_iron_lower	block/iron_door_bottom
+blocks/door_iron_upper	block/iron_door_top
+blocks/door_wood_lower	block/oak_door_bottom
+blocks/door_wood_upper	block/oak_door_top
 blocks/dragon_egg	block/dragon_egg
 blocks/dropper_front_vertical	block/dropper_front_vertical
 blocks/emerald_block	block/emerald_block
@@ -73,12 +78,16 @@ blocks/enchanting_table_side	block/enchanting_table_side
 blocks/enchanting_table_top	block/enchanting_table_top
 blocks/end_rod	block/end_rod
 blocks/end_stone	block/end_stone
+blocks/farmland_dry	block/farmland
+blocks/farmland_wet	block/farmland_moist
 blocks/fern	block/fern
+blocks/flower_dandelion	block/dandelion
 blocks/flower_pot	block/flower_pot
 blocks/frosted_ice_0	block/frosted_ice_0
 blocks/frosted_ice_1	block/frosted_ice_1
 blocks/frosted_ice_2	block/frosted_ice_2
 blocks/frosted_ice_3	block/frosted_ice_3
+blocks/furnace_front_off	block/furnace_front
 blocks/furnace_front_on	block/furnace_front_on
 blocks/furnace_side	block/furnace_side
 blocks/furnace_top	block/furnace_top
@@ -112,10 +121,13 @@ blocks/lapis_ore	block/lapis_ore
 blocks/lava_flow	block/lava_flow
 blocks/lava_still	block/lava_still
 blocks/lever	block/lever
+blocks/log_oak	block/oak_log
 blocks/magma	block/magma
 blocks/melon_side	block/melon_side
 blocks/melon_top	block/melon_top
 blocks/mushroom_block_inside	block/mushroom_block_inside
+blocks/mushroom_brown	block/brown_mushroom
+blocks/mushroom_red	block/red_mushroom
 blocks/mycelium_side	block/mycelium_side
 blocks/mycelium_top	block/mycelium_top
 blocks/nether_wart_block	block/nether_wart_block
@@ -135,6 +147,8 @@ blocks/planks_jungle	block/jungle_planks
 blocks/planks_oak	block/oak_planks
 blocks/planks_spruce	block/spruce_planks
 blocks/prismarine_bricks	block/prismarine_bricks
+blocks/pumpkin_face_off	block/carved_pumpkin
+blocks/pumpkin_face_on	block/jack_o_lantern
 blocks/pumpkin_side	block/pumpkin_side
 blocks/pumpkin_top	block/pumpkin_top
 blocks/purpur_block	block/purpur_block
@@ -143,6 +157,8 @@ blocks/purpur_pillar_top	block/purpur_pillar_top
 blocks/quartz_block_bottom	block/quartz_block_bottom
 blocks/quartz_block_side	block/quartz_block_side
 blocks/quartz_block_top	block/quartz_block_top
+blocks/rail_normal	block/rail
+blocks/rail_normal_turned	block/rail_corner
 blocks/red_sand	block/red_sand
 blocks/red_sandstone_bottom	block/red_sandstone_bottom
 blocks/red_sandstone_top	block/red_sandstone_top
@@ -154,6 +170,8 @@ blocks/redstone_dust_overlay	block/redstone_dust_overlay
 blocks/redstone_lamp_on	block/redstone_lamp_on
 blocks/redstone_ore	block/redstone_ore
 blocks/redstone_torch_off	block/redstone_torch_off
+blocks/redstone_torch_on	block/redstone_torch
+blocks/reeds	block/sugar_cane
 blocks/repeater_on	block/repeater_on
 blocks/repeating_command_block_back	block/repeating_command_block_back
 blocks/repeating_command_block_conditional	block/repeating_command_block_conditional
@@ -167,6 +185,8 @@ blocks/snow	block/snow
 blocks/soul_sand	block/soul_sand
 blocks/sponge	block/sponge
 blocks/stone	block/stone
+blocks/stone_slab_side	block/smooth_stone_slab_side
+blocks/stone_slab_top	block/smooth_stone
 blocks/structure_block	block/structure_block
 blocks/structure_block_corner	block/structure_block_corner
 blocks/structure_block_data	block/structure_block_data
@@ -175,7 +195,16 @@ blocks/structure_block_save	block/structure_block_save
 blocks/tnt_bottom	block/tnt_bottom
 blocks/tnt_side	block/tnt_side
 blocks/tnt_top	block/tnt_top
+blocks/torch_on	block/torch
 blocks/vine	block/vine
+blocks/wheat_stage_0	block/wheat_stage0
+blocks/wheat_stage_1	block/wheat_stage1
+blocks/wheat_stage_2	block/wheat_stage2
+blocks/wheat_stage_3	block/wheat_stage3
+blocks/wheat_stage_4	block/wheat_stage4
+blocks/wheat_stage_5	block/wheat_stage5
+blocks/wheat_stage_6	block/wheat_stage6
+blocks/wheat_stage_7	block/wheat_stage7
 blocks/wool_colored_black	block/black_wool
 blocks/wool_colored_blue	block/blue_wool
 blocks/wool_colored_brown	block/brown_wool
@@ -203,6 +232,7 @@ items/birch_boat	item/birch_boat
 items/blaze_powder	item/blaze_powder
 items/blaze_rod	item/blaze_rod
 items/bone	item/bone
+items/book_normal	item/book
 items/bow_pulling_0	item/bow_pulling_0
 items/bow_pulling_1	item/bow_pulling_1
 items/bow_pulling_2	item/bow_pulling_2
@@ -212,6 +242,10 @@ items/bread	item/bread
 items/brewing_stand	item/brewing_stand
 items/brick	item/brick
 items/broken_elytra	item/broken_elytra
+items/bucket_empty	item/bucket
+items/bucket_lava	item/lava_bucket
+items/bucket_milk	item/milk_bucket
+items/bucket_water	item/water_bucket
 items/cake	item/cake
 items/carrot	item/carrot
 items/carrot_on_a_stick	item/carrot_on_a_stick
@@ -334,6 +368,8 @@ items/diamond_leggings	item/diamond_leggings
 items/diamond_pickaxe	item/diamond_pickaxe
 items/diamond_shovel	item/diamond_shovel
 items/diamond_sword	item/diamond_sword
+items/door_iron	item/iron_door
+items/door_wood	item/oak_door
 items/dragon_breath	item/dragon_breath
 items/egg	item/egg
 items/elytra	item/elytra
@@ -348,6 +384,8 @@ items/ender_eye	item/ender_eye
 items/ender_pearl	item/ender_pearl
 items/experience_bottle	item/experience_bottle
 items/feather	item/feather
+items/fish_cod_cooked	item/cooked_cod
+items/fish_cod_raw	item/cod
 items/fishing_rod_cast	item/fishing_rod_cast
 items/fishing_rod_uncast	item/fishing_rod
 items/flint	item/flint
@@ -355,8 +393,16 @@ items/flint_and_steel	item/flint_and_steel
 items/flower_pot	item/flower_pot
 items/ghast_tear	item/ghast_tear
 items/glowstone_dust	item/glowstone_dust
+items/gold_axe	item/golden_axe
+items/gold_boots	item/golden_boots
+items/gold_chestplate	item/golden_chestplate
+items/gold_hoe	item/golden_hoe
 items/gold_ingot	item/gold_ingot
+items/gold_leggings	item/golden_leggings
 items/gold_nugget	item/gold_nugget
+items/gold_pickaxe	item/golden_pickaxe
+items/gold_shovel	item/golden_shovel
+items/gold_sword	item/golden_sword
 items/gunpowder	item/gunpowder
 items/hopper	item/hopper
 items/iron_axe	item/iron_axe
@@ -384,6 +430,8 @@ items/leather_helmet_overlay	item/leather_helmet_overlay
 items/leather_leggings	item/leather_leggings
 items/leather_leggings_overlay	item/leather_leggings_overlay
 items/magma_cream	item/magma_cream
+items/minecart_furnace	item/furnace_minecart
+items/minecart_normal	item/minecart
 items/mushroom_stew	item/mushroom_stew
 items/name_tag	item/name_tag
 items/nether_star	item/nether_star
@@ -412,12 +460,16 @@ items/record_stal	item/music_disc_stal
 items/record_strad	item/music_disc_strad
 items/record_wait	item/music_disc_wait
 items/record_ward	item/music_disc_ward
+items/redstone_dust	item/redstone
+items/reeds	item/sugar_cane
 items/repeater	item/repeater
 items/rotten_flesh	item/rotten_flesh
 items/ruby	item/ruby
 items/saddle	item/saddle
 items/shears	item/shears
 items/shulker_shell	item/shulker_shell
+items/sign	item/oak_sign
+items/slimeball	item/slime_ball
 items/snowball	item/snowball
 items/spawn_egg	item/spawn_egg
 items/spawn_egg_overlay	item/spawn_egg_overlay
@@ -436,3 +488,8 @@ items/sugar	item/sugar
 items/tipped_arrow_base	item/tipped_arrow_base
 items/tipped_arrow_head	item/tipped_arrow_head
 items/wheat	item/wheat
+items/wood_axe	item/wooden_axe
+items/wood_hoe	item/wooden_hoe
+items/wood_pickaxe	item/wooden_pickaxe
+items/wood_shovel	item/wooden_shovel
+items/wood_sword	item/wooden_sword

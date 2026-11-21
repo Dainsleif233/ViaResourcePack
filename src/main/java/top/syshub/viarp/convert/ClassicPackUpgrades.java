@@ -64,31 +64,8 @@ final class ClassicPackUpgrades {
     private static final Map<String, String> FLAT_MODELS = pairs(
             "block/grass", "block/grass_block",
             "block/grass_snowed", "block/grass_block_snow");
-    // 见 1.12.2 en_us.lang 与 1.14.4 en_us.json；按对象身份核对，不以英文字符串相同为规则。
-    private static final Map<String, String> FLAT_LANG = pairs(
-            "tile.grass.name", "block.minecraft.grass_block",
-            "tile.stone.stone.name", "block.minecraft.stone",
-            "tile.stone.granite.name", "block.minecraft.granite",
-            "tile.stone.graniteSmooth.name", "block.minecraft.polished_granite",
-            "tile.stone.diorite.name", "block.minecraft.diorite",
-            "tile.stone.dioriteSmooth.name", "block.minecraft.polished_diorite",
-            "tile.stone.andesite.name", "block.minecraft.andesite",
-            "tile.stone.andesiteSmooth.name", "block.minecraft.polished_andesite",
-            "tile.dirt.default.name", "block.minecraft.dirt",
-            "tile.dirt.coarse.name", "block.minecraft.coarse_dirt",
-            "tile.dirt.podzol.name", "block.minecraft.podzol",
-            "tile.wood.oak.name", "block.minecraft.oak_planks",
-            "tile.wood.spruce.name", "block.minecraft.spruce_planks",
-            "tile.wood.birch.name", "block.minecraft.birch_planks",
-            "tile.wood.jungle.name", "block.minecraft.jungle_planks",
-            "tile.wood.acacia.name", "block.minecraft.acacia_planks",
-            "tile.wood.big_oak.name", "block.minecraft.dark_oak_planks",
-            "item.apple.name", "item.minecraft.apple",
-            "item.bow.name", "item.minecraft.bow",
-            "item.diamond.name", "item.minecraft.diamond",
-            "item.stick.name", "item.minecraft.stick",
-            "item.fishingRod.name", "item.minecraft.fishing_rod",
-            "item.dyePowder.red.name", "item.minecraft.red_dye");
+    private static final String FLAT_LANG_TABLE = "/viarp/migrations/classic/format-4-language.tsv";
+    private static final String EARLY_TEXTURE_TABLE = "/viarp/migrations/classic/format-2-early-textures.tsv";
     private static final Map<String, String> PATH_TEXTURES = pairs(
             "block/grass_path_top", "block/dirt_path_top", "block/grass_path_side", "block/dirt_path_side");
     private static final Map<String, String> PATH_MODELS = pairs(
@@ -161,6 +138,7 @@ final class ClassicPackUpgrades {
 
     private static void upgradeModels(UpgradeWorkspace workspace) throws IOException {
         List<String> files = workspace.files();
+        Map<String, String> earlyTextures = renameEarlyTextures(workspace, files);
         // builtin/generated 仍是有效的生成标记。只在整条原版父链均未被包覆盖时替换，
         // 否则可能改变继承语义，或让生成根经由包内模型（包括其他命名空间）指回自己。
         boolean vanillaGenerated = !files.contains(VANILLA + "models/item/generated.json");
@@ -176,7 +154,7 @@ final class ClassicPackUpgrades {
             }
             Object parent = model.get("parent");
             boolean rod = file.equals(VANILLA + "models/item/fishing_rod.json");
-            boolean changed = false;
+            boolean changed = rewriteModel(model, id -> id, id -> replaceVanilla(id, earlyTextures));
             if ("builtin/generated".equals(parent) || "minecraft:builtin/generated".equals(parent)) {
                 boolean sword = file.equals(VANILLA + "models/item/diamond_sword.json");
                 if (rod ? vanillaHandheldRod : sword ? vanillaHandheld : vanillaGenerated) {
@@ -343,18 +321,52 @@ final class ClassicPackUpgrades {
         schedule(changes, VANILLA + "models/", ".json", FLAT_MODELS);
         schedule(changes, VANILLA + "blockstates/", ".json", pairs("grass", "grass_block"));
         workspace.moveFiles(changes);
+        Map<String, String> language = readMappings(FLAT_LANG_TABLE, "[A-Za-z0-9_.-]+", "[a-z0-9_.-]+");
         rewriteAssets(workspace, 4, id -> replaceVanilla(id, FLAT_MODELS),
                 id -> flattenTextureReference(workspace, id, textures),
-                id -> flattenStateModel(id, original), id -> FLAT_LANG.getOrDefault(id, id), false);
-        convertLanguages(workspace);
+                id -> flattenStateModel(id, original), id -> language.getOrDefault(id, id), false);
+        convertLanguages(workspace, language);
+    }
+
+    private static Map<String, String> renameEarlyTextures(UpgradeWorkspace workspace, List<String> files)
+            throws IOException {
+        Map<String, String> candidates = readMappings(EARLY_TEXTURE_TABLE, "items/[a-z0-9_.-]+", "items/[a-z0-9_.-]+");
+        Set<String> exact = new HashSet<String>(files);
+        Set<String> occupied = foldedFiles(files);
+        Map<String, String> applied = new LinkedHashMap<String, String>();
+        String root = VANILLA + "textures/";
+        for (Map.Entry<String, String> entry : candidates.entrySet()) {
+            String source = root + entry.getKey() + ".png";
+            String target = root + entry.getValue() + ".png";
+            boolean hasOld = exact.contains(source) || exact.contains(source + ".mcmeta");
+            if (hasOld && (occupied.contains(target) || occupied.contains(target + ".mcmeta")
+                    || Files.exists(workspace.path(target)) || Files.exists(workspace.path(target + ".mcmeta")))) {
+                warn(workspace, 2, source, "已有新名纹理或侧车，保留两套文件与原引用");
+            } else {
+                applied.put(entry.getKey(), entry.getValue());
+            }
+        }
+        Map<String, String> moves = new LinkedHashMap<String, String>();
+        scheduleTextures(moves, applied);
+        // 格式 1 允许大小写；不要把不同拼法的用户文件当作同一个已确认的旧 ID。
+        moves.keySet().retainAll(exact);
+        workspace.moveFiles(moves);
+        return applied;
     }
 
     private static Map<String, String> flattenTextureTable() throws IOException {
-        InputStream stream = ClassicPackUpgrades.class.getResourceAsStream(FLAT_TEXTURE_TABLE);
+        Map<String, String> textures = readMappings(FLAT_TEXTURE_TABLE,
+                "(?:blocks|items)/[a-z0-9_.-]+", "(?:block|item)/[a-z0-9_.-]+");
+        textures.putAll(FLAT_TEXTURE_EXCEPTIONS);
+        return textures;
+    }
+
+    private static Map<String, String> readMappings(String resource, String sourcePattern, String targetPattern) throws IOException {
+        InputStream stream = ClassicPackUpgrades.class.getResourceAsStream(resource);
         if (stream == null) {
-            throw new IOException("Missing classic migration table: " + FLAT_TEXTURE_TABLE);
+            throw new IOException("Missing classic migration table: " + resource);
         }
-        Map<String, String> textures = new LinkedHashMap<String, String>();
+        Map<String, String> mappings = new LinkedHashMap<String, String>();
         try (BufferedReader entries = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = entries.readLine()) != null) {
@@ -362,15 +374,13 @@ final class ClassicPackUpgrades {
                     continue;
                 }
                 String[] pair = line.split("\t", -1);
-                if (pair.length != 2 || !pair[0].matches("(?:blocks|items)/[a-z0-9_.-]+")
-                        || !pair[1].matches("(?:block|item)/[a-z0-9_.-]+")
-                        || textures.putIfAbsent(pair[0], pair[1]) != null) {
-                    throw new IOException("Invalid classic migration table entry: " + line);
+                if (pair.length != 2 || !pair[0].matches(sourcePattern) || !pair[1].matches(targetPattern)
+                        || mappings.putIfAbsent(pair[0], pair[1]) != null) {
+                    throw new IOException("Invalid classic migration table entry: " + resource + ": " + line);
                 }
             }
         }
-        textures.putAll(FLAT_TEXTURE_EXCEPTIONS);
-        return textures;
+        return mappings;
     }
 
     private static String flattenTextureReference(UpgradeWorkspace workspace, String id, Map<String, String> textures) {
@@ -400,7 +410,7 @@ final class ClassicPackUpgrades {
         return replaceVanilla(parsed.withPath(path), FLAT_MODELS);
     }
 
-    private static void convertLanguages(UpgradeWorkspace workspace) throws IOException {
+    private static void convertLanguages(UpgradeWorkspace workspace, Map<String, String> language) throws IOException {
         List<String> files = workspace.files();
         Set<String> occupied = foldedFiles(files);
         for (String file : files) {
@@ -439,7 +449,7 @@ final class ClassicPackUpgrades {
                         continue;
                     }
                     String key = line.substring(0, split);
-                    String mapped = vanilla ? FLAT_LANG.getOrDefault(key, key) : key;
+                    String mapped = vanilla ? language.getOrDefault(key, key) : key;
                     if (vanilla && ("item.record.name".equals(key) || "tile.wood.name".equals(key))) {
                         warn(workspace, 4, file, "旧键 " + key + " 对应多个目标对象；以原键保留，不复制到新键");
                     } else if (vanilla && key.equals(mapped) && key.endsWith(".name")

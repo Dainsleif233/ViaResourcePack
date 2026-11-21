@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Dainsleif
+# 1.6.1/1.6.4 → 1.8.9，15w31a 与 1.9 仍使用目标名；证据见 docs/research/early-texture-names.md。
+# 旧纹理 ID	新纹理 ID（仅 minecraft 命名空间；无目录前缀或扩展名）
+items/fish_cooked	items/fish_cod_cooked
+items/fish_raw	items/fish_cod_raw
