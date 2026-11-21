@@ -17,6 +17,7 @@
  */
 package top.syshub.viarp.pack;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -25,254 +26,232 @@ import top.syshub.viarp.json.Json;
 import top.syshub.viarp.json.JsonAccess;
 import top.syshub.viarp.json.JsonException;
 
-/**
- * 读写 {@code pack.mcmeta} 的 {@code pack} 段。
- *
- * <p>横跨三代 schema（键名与形态都从 26.2 的
- * {@code PackFormat$IntermediaryFormat} 编解码器里逐条核对过）：
- *
- * <ol>
- *   <li>1.6 – 1.20.1：只有 {@code pack_format}（int）。</li>
- *   <li>1.20.2 – 1.21.8：额外支持 {@code supported_formats}，可以是 int、
- *       {@code [min, max]} 数组、或 {@code {min_inclusive, max_inclusive}} 对象。</li>
- *   <li>1.21.9+：新增 {@code min_format} / {@code max_format}（int 或
- *       {@code [major, minor]}）与 {@code formats}（int / 数组 / 对象）；
- *       {@code pack_format} 与 {@code supported_formats} 仍被接受。</li>
- * </ol>
- *
- * <p>解析时按「新键优先」合并出一个 {@link PackFormatRange}；写回时只写
- * {@code pack_format} 一个键——它在 1.6 – 26.2 全区间都被接受，而转换产物只针对
- * 当前这一个 major，声明区间反而会让缓存产物被误用到别的版本上。
- */
+/** 资源包格式声明：按原版读者的代际解释兼容范围，另提供安全的升版边界。 */
 public final class PackMetadata {
+
+    // 23w31a (16) 开始读取 supported_formats；25w31a (65.0) 切到 major/minor。
+    private static final int FIRST_LEGACY_RANGE = 16;
+    private static final int LAST_LEGACY_FORMAT = 64;
+    private static final int MIN_RANGE_FALLBACK = 15;
+    private static final PackFormatRange UNKNOWN = PackFormatRange.single(PackFormat.UNKNOWN);
 
     private static final String KEY_PACK = "pack";
     private static final String KEY_PACK_FORMAT = "pack_format";
     private static final String KEY_SUPPORTED_FORMATS = "supported_formats";
     private static final String KEY_MIN_FORMAT = "min_format";
     private static final String KEY_MAX_FORMAT = "max_format";
-    private static final String KEY_FORMATS = "formats";
     private static final String KEY_MIN_INCLUSIVE = "min_inclusive";
     private static final String KEY_MAX_INCLUSIVE = "max_inclusive";
     private static final String KEY_DESCRIPTION = "description";
 
     private final Map<String, Object> root;
+    private final PackFormat legacyFormat;
+    private final PackFormatRange legacyRange;
     private final PackFormatRange supported;
-    private final boolean hasLegacyPackFormat;
 
-    private PackMetadata(Map<String, Object> root, PackFormatRange supported, boolean hasLegacyPackFormat) {
+    private PackMetadata(Map<String, Object> root, PackFormat legacyFormat,
+                         PackFormatRange legacyRange, PackFormatRange supported) {
         this.root = root;
+        this.legacyFormat = legacyFormat;
+        this.legacyRange = legacyRange;
         this.supported = supported;
-        this.hasLegacyPackFormat = hasLegacyPackFormat;
     }
 
-    /** 解析一份 {@code pack.mcmeta} 文本。 */
+    /** 解析一份 {@code pack.mcmeta}；错误或自相矛盾的格式声明不构成升级依据。 */
     public static PackMetadata parse(String text) throws JsonException {
         Map<String, Object> root = Json.parseObject(text);
         Map<String, Object> pack = JsonAccess.object(root, KEY_PACK);
-        boolean legacy = pack != null && readFormat(pack.get(KEY_PACK_FORMAT)).isKnown();
-        return new PackMetadata(root, readRange(pack), legacy);
+        if (pack == null) {
+            return new PackMetadata(root, PackFormat.UNKNOWN, UNKNOWN, UNKNOWN);
+        }
+        PackFormat legacy = PackFormat.of(nonNegativeInt(pack.get(KEY_PACK_FORMAT)));
+        PackFormatRange range = readLegacyRange(pack.get(KEY_SUPPORTED_FORMATS));
+        PackFormatRange legacyRange = range.contains(legacy) ? range : PackFormatRange.single(legacy);
+        return new PackMetadata(root, legacy, legacyRange, readDeclaredRange(pack, legacy, range));
     }
 
-    /** 源包声明的受支持格式区间；未声明任何格式时 {@code min().isKnown()} 为 false。 */
+    /** 源包声明的格式闭区间；无可信声明时两端均为 UNKNOWN。 */
     public PackFormatRange supportedFormats() {
         return supported;
     }
 
-    /** 源包的「主」格式——转换时作为 {@code from}。 */
+    /** 旧主声明或现代区间下界，作为迁移基准；不能拿它代替整个兼容区间。 */
     public PackFormat primaryFormat() {
-        return supported.min();
+        return supported.contains(legacyFormat) ? legacyFormat : supported.min();
     }
 
-    /** 源包是否声明了任何可用的格式。 */
     public boolean hasFormat() {
         return supported.min().isKnown();
     }
 
-    /** 目标 major 是否已被源包声明支持（支持则无需转换）。 */
-    public boolean supports(int major) {
-        return hasFormat() && supported.containsMajor(major);
+    /** 按目标客户端实际使用的格式声明判断兼容；不把元数据兼容等同于素材兼容。 */
+    public boolean supports(PackFormat target) {
+        if (!target.isKnown()) {
+            return false;
+        }
+        if (target.major() < FIRST_LEGACY_RANGE) {
+            return target.equals(legacyFormat);
+        }
+        return (target.major() <= LAST_LEGACY_FORMAT ? legacyRange : supported).contains(target);
     }
 
-    /**
-     * 源包是否写了 {@code pack_format}（int）这个老键。
-     *
-     * <p>用途见 {@code PackPlaceholder}：1.20.1 及更早的 {@code PackMetadataSectionSerializer}
-     * 用 {@code GsonHelper.getAsInt(json, "pack_format")} 读格式，缺键直接抛
-     * {@code JsonParseException}，原版会记一句「Couldn't load pack metadata」并把整个包
-     * **从列表里丢掉**。而 1.21.9+ 的资源包只写 {@code min_format} / {@code max_format}，
-     * 于是这类包在老版本上连「不兼容」都显示不出来——它压根不出现。
-     */
+    /** 只允许目标严格超过源包声明上界；不能用降版来补偿旧客户端无法读取新声明。 */
+    public boolean canUpgradeTo(PackFormat target) {
+        return target.isKnown() && hasFormat() && target.compareTo(supported.max()) > 0 && !supports(target);
+    }
+
+    /** 是否有旧式、可读的单个整型 {@code pack_format} 字段。 */
     public boolean hasLegacyPackFormat() {
-        return hasLegacyPackFormat;
+        return legacyFormat.isKnown();
     }
 
-    /** {@code pack.description}，没有则返回 [fallback]。 */
     public String description(String fallback) {
         Map<String, Object> pack = JsonAccess.object(root, KEY_PACK);
-        String description = JsonAccess.string(pack, KEY_DESCRIPTION, null);
-        return description != null ? description : fallback;
+        return JsonAccess.string(pack, KEY_DESCRIPTION, fallback);
     }
-    /**
-     * 把 {@code pack} 段改写成 [target] 单一格式，返回新的 {@code pack.mcmeta} 文本。
-     *
-     * <p>其余键（{@code description}、{@code overlays}、语言/滤镜段等）原样保留。
-     */
+
+    /** 只改写格式声明；迁移 overlays、filter 或素材是调用者的职责。 */
     public String withFormat(PackFormat target) {
         Map<String, Object> newRoot = new LinkedHashMap<String, Object>(root);
         Map<String, Object> pack = JsonAccess.object(root, KEY_PACK);
         Map<String, Object> newPack = pack == null
-                ? new LinkedHashMap<String, Object>()
-                : new LinkedHashMap<String, Object>(pack);
-
-        // 先清掉所有格式相关的键，再写目标格式，避免新旧键互相矛盾。
+                ? new LinkedHashMap<String, Object>() : new LinkedHashMap<String, Object>(pack);
         newPack.remove(KEY_PACK_FORMAT);
         newPack.remove(KEY_SUPPORTED_FORMATS);
         newPack.remove(KEY_MIN_FORMAT);
         newPack.remove(KEY_MAX_FORMAT);
-        newPack.remove(KEY_FORMATS);
-        newPack.put(KEY_PACK_FORMAT, Integer.valueOf(target.major()));
-
+        writeSingleFormat(newPack, target);
+        if (newPack.get(KEY_DESCRIPTION) == null) {
+            newPack.put(KEY_DESCRIPTION, "Converted by ViaResourcePack");
+        }
         newRoot.put(KEY_PACK, newPack);
         return Json.write(newRoot);
     }
 
-    /** 生成一份最小可用的 {@code pack.mcmeta}（源包缺失该文件时兜底）。 */
+    /** 生成一份最小可用的目标格式声明。 */
     public static String minimal(PackFormat target, String description) {
+        return minimalDescription(target, description);
+    }
+
+    /** 占位包只含目标格式、原始文本组件；不能引用不存在的 overlays。 */
+    public String stub(PackFormat target, String fallback) {
+        Map<String, Object> pack = JsonAccess.object(root, KEY_PACK);
+        Object description = pack == null ? null : pack.get(KEY_DESCRIPTION);
+        return minimalDescription(target, description != null ? description : fallback);
+    }
+
+    private static String minimalDescription(PackFormat target, Object description) {
         Map<String, Object> pack = new LinkedHashMap<String, Object>();
-        pack.put(KEY_PACK_FORMAT, Integer.valueOf(target.major()));
+        writeSingleFormat(pack, target);
         pack.put(KEY_DESCRIPTION, description);
         Map<String, Object> root = new LinkedHashMap<String, Object>();
         root.put(KEY_PACK, pack);
         return Json.write(root);
     }
 
-    /**
-     * 生成占位包的 {@code pack.mcmeta}：只有 {@code pack_format} 与原样搬过来的
-     * {@code description}。
-     *
-     * <p>{@code description} 必须**原样**复制而不是转成字符串：它可以是纯文本，也可以是
-     * 一整个文本组件（{@code {"text":...,"color":...}}）甚至组件数组，而各版本的
-     * {@code ComponentSerialization} 对这三种形态都认。源包没写时用 [fallback]。
-     *
-     * <p>刻意不复制 {@code overlays} 之类的其他键：占位包里没有对应目录，声明了反而会让
-     * 原版去找不存在的东西。
-     */
-    public String stub(PackFormat target, String fallback) {
-        Map<String, Object> pack = new LinkedHashMap<String, Object>();
-        pack.put(KEY_PACK_FORMAT, Integer.valueOf(target.major()));
-        Object description = descriptionValue();
-        pack.put(KEY_DESCRIPTION, description != null ? description : fallback);
-        Map<String, Object> root = new LinkedHashMap<String, Object>();
-        root.put(KEY_PACK, pack);
-        return Json.write(root);
-    }
-
-    /** {@code pack.description} 的原始 JSON 值（字符串 / 对象 / 数组）；缺失时 {@code null}。 */
-    private Object descriptionValue() {
-        Map<String, Object> pack = JsonAccess.object(root, KEY_PACK);
-        return pack == null ? null : pack.get(KEY_DESCRIPTION);
-    }
-
-    // ────────────────────────────── 解析细节 ──────────────────────────────
-
-    private static PackFormatRange readRange(Map<String, Object> pack) {
-        if (pack == null) {
-            return PackFormatRange.single(PackFormat.UNKNOWN);
+    private static void writeSingleFormat(Map<String, Object> pack, PackFormat target) {
+        if (!target.isKnown()) {
+            throw new IllegalArgumentException("Unknown resource pack format");
         }
-
-        PackFormat min = readFormat(pack.get(KEY_MIN_FORMAT));
-        PackFormat max = readFormat(pack.get(KEY_MAX_FORMAT));
-
-        // formats（1.21.9+）与 supported_formats（1.20.2+）语义相同，都是闭区间。
-        PackFormatRange declared = readRangeValue(pack.get(KEY_FORMATS));
-        if (declared == null) {
-            declared = readRangeValue(pack.get(KEY_SUPPORTED_FORMATS));
-        }
-
-        PackFormat single = readFormat(pack.get(KEY_PACK_FORMAT));
-
-        PackFormat lo = firstKnown(min, declared == null ? null : declared.min(), single);
-        PackFormat hi = firstKnown(max, declared == null ? null : declared.max(), single);
-
-        if (!lo.isKnown() && !hi.isKnown()) {
-            return PackFormatRange.single(PackFormat.UNKNOWN);
-        }
-        if (!lo.isKnown()) {
-            lo = hi;
-        }
-        if (!hi.isKnown()) {
-            hi = lo;
-        }
-        if (lo.compareTo(hi) > 0) {
-            PackFormat swap = lo;
-            lo = hi;
-            hi = swap;
-        }
-        return new PackFormatRange(lo, hi);
-    }
-
-    private static PackFormat firstKnown(PackFormat... candidates) {
-        for (PackFormat candidate : candidates) {
-            if (candidate != null && candidate.isKnown()) {
-                return candidate;
+        if (target.major() <= LAST_LEGACY_FORMAT) {
+            if (target.minor() != 0) {
+                throw new IllegalArgumentException("Legacy pack formats have no minor: " + target);
             }
+            pack.put(KEY_PACK_FORMAT, Integer.valueOf(target.major()));
+        } else {
+            List<Integer> exact = Arrays.asList(Integer.valueOf(target.major()), Integer.valueOf(target.minor()));
+            pack.put(KEY_MIN_FORMAT, exact);
+            pack.put(KEY_MAX_FORMAT, exact);
         }
-        return PackFormat.UNKNOWN;
     }
 
-    /** 单个格式值：int 或 {@code [major, minor]}。 */
-    private static PackFormat readFormat(Object value) {
-        if (value instanceof Number || value instanceof String) {
-            int major = JsonAccess.integer(value, -1);
-            return major < 0 ? PackFormat.UNKNOWN : PackFormat.of(major);
+    private static PackFormatRange readDeclaredRange(Map<String, Object> pack, PackFormat legacy,
+                                                     PackFormatRange legacyRange) {
+        boolean hasLegacy = pack.containsKey(KEY_PACK_FORMAT);
+        boolean hasLegacyRange = pack.containsKey(KEY_SUPPORTED_FORMATS);
+        if ((hasLegacy && !legacy.isKnown()) || (hasLegacyRange && !legacyRange.min().isKnown())) {
+            return UNKNOWN;
         }
+        if (!pack.containsKey(KEY_MIN_FORMAT) && !pack.containsKey(KEY_MAX_FORMAT)) {
+            if (!legacy.isKnown() || legacy.major() > LAST_LEGACY_FORMAT) {
+                return UNKNOWN;
+            }
+            if (!hasLegacyRange) {
+                return PackFormatRange.single(legacy);
+            }
+            if (legacyRange.max().major() > LAST_LEGACY_FORMAT
+                    || !legacyRange.contains(legacy) || legacy.major() < MIN_RANGE_FALLBACK) {
+                return UNKNOWN;
+            }
+            return legacyRange;
+        }
+
+        PackFormat min = readBound(pack.get(KEY_MIN_FORMAT), 0);
+        PackFormat max = readBound(pack.get(KEY_MAX_FORMAT), PackFormat.MAX_MINOR);
+        PackFormatRange modern = orderedRange(min, max);
+        if (!modern.min().isKnown()) {
+            return UNKNOWN;
+        }
+        if (hasLegacy && (legacy.major() < MIN_RANGE_FALLBACK
+                || legacy.major() < min.major() || legacy.major() > max.major())) {
+            return UNKNOWN;
+        }
+        if (min.major() > LAST_LEGACY_FORMAT) {
+            return hasLegacyRange ? UNKNOWN : modern;
+        }
+        if (!hasLegacy || !hasLegacyRange || legacyRange.min().major() != min.major()
+                || (legacyRange.max().major() != max.major() && legacyRange.max().major() != LAST_LEGACY_FORMAT)) {
+            return UNKNOWN;
+        }
+        return modern;
+    }
+
+    static PackFormat readBound(Object value, int defaultMinor) {
         if (value instanceof List) {
-            List<?> list = (List<?>) value;
-            if (list.isEmpty()) {
+            List<?> values = (List<?>) value;
+            if (values.isEmpty() || values.size() > 256) {
                 return PackFormat.UNKNOWN;
             }
-            int major = JsonAccess.integer(list.get(0), -1);
-            if (major < 0) {
-                return PackFormat.UNKNOWN;
+            for (Object part : values) {
+                if (nonNegativeInt(part) < 0) {
+                    return PackFormat.UNKNOWN;
+                }
             }
-            int minor = list.size() > 1 ? JsonAccess.integer(list.get(1), 0) : 0;
-            return PackFormat.of(major, Math.max(0, minor));
+            return PackFormat.of(nonNegativeInt(values.get(0)),
+                    values.size() > 1 ? nonNegativeInt(values.get(1)) : defaultMinor);
         }
-        return PackFormat.UNKNOWN;
+        int major = nonNegativeInt(value);
+        return major < 0 ? PackFormat.UNKNOWN : PackFormat.of(major, defaultMinor);
     }
 
-    /** 区间值：int（退化为单点）、{@code [min, max]}、或 {@code {min_inclusive, max_inclusive}}。 */
-    @SuppressWarnings("unchecked")
-    private static PackFormatRange readRangeValue(Object value) {
-        if (value instanceof Number || value instanceof String) {
-            PackFormat single = readFormat(value);
-            return single.isKnown() ? PackFormatRange.single(single) : null;
-        }
+    static PackFormatRange readLegacyRange(Object value) {
         if (value instanceof List) {
-            List<?> list = (List<?>) value;
-            if (list.size() < 2) {
-                PackFormat single = list.isEmpty() ? PackFormat.UNKNOWN : readFormat(list.get(0));
-                return single.isKnown() ? PackFormatRange.single(single) : null;
+            List<?> bounds = (List<?>) value;
+            if (bounds.size() != 2) {
+                return UNKNOWN;
             }
-            // 这里的两元素是 [min, max]（区间），而不是 min_format 的 [major, minor]，
-            // 由键名区分——同样的 JSON 形状在两处含义不同。
-            PackFormat lo = PackFormat.of(JsonAccess.integer(list.get(0), -1));
-            PackFormat hi = PackFormat.of(JsonAccess.integer(list.get(1), -1));
-            if (!lo.isKnown() || !hi.isKnown()) {
-                return null;
-            }
-            return new PackFormatRange(lo, hi);
+            return orderedRange(PackFormat.of(nonNegativeInt(bounds.get(0))),
+                    PackFormat.of(nonNegativeInt(bounds.get(1))));
         }
         if (value instanceof Map) {
-            Map<String, Object> map = (Map<String, Object>) value;
-            PackFormat lo = readFormat(map.get(KEY_MIN_INCLUSIVE));
-            PackFormat hi = readFormat(map.get(KEY_MAX_INCLUSIVE));
-            if (!lo.isKnown() || !hi.isKnown()) {
-                return null;
-            }
-            return new PackFormatRange(lo, hi);
+            Map<?, ?> bounds = (Map<?, ?>) value;
+            return orderedRange(PackFormat.of(nonNegativeInt(bounds.get(KEY_MIN_INCLUSIVE))),
+                    PackFormat.of(nonNegativeInt(bounds.get(KEY_MAX_INCLUSIVE))));
         }
-        return null;
+        return PackFormatRange.single(PackFormat.of(nonNegativeInt(value)));
+    }
+
+    static PackFormatRange orderedRange(PackFormat min, PackFormat max) {
+        return min.isKnown() && max.isKnown() && min.compareTo(max) <= 0
+                ? new PackFormatRange(min, max) : UNKNOWN;
+    }
+
+    private static int nonNegativeInt(Object value) {
+        if (!(value instanceof Number)) {
+            return -1;
+        }
+        double number = ((Number) value).doubleValue();
+        int integer = (int) number;
+        return integer >= 0 && number == integer ? integer : -1;
     }
 }

@@ -57,7 +57,6 @@ public final class ConversionService {
     private final ViaRpConfig config;
     private final ConversionCache cache;
     private final PackSelection selection;
-    private final PackPlaceholder placeholder;
     private final AtomicLong workCounter = new AtomicLong();
 
     /** 本次运行已经报告过失败的源包，避免每次重载都刷同一条错误日志。 */
@@ -71,7 +70,6 @@ public final class ConversionService {
         this.config = config;
         this.cache = cache;
         this.selection = selection;
-        this.placeholder = new PackPlaceholder(paths);
     }
 
     public static ConversionService get() {
@@ -103,7 +101,7 @@ public final class ConversionService {
     }
 
     /**
-     * 若 [source] 与当前游戏版本不匹配，返回转换后的资源包路径；否则原样返回 [source]。
+     * 仅在 [source] 的声明上界低于当前格式时尝试升级；否则原样返回 [source]。
      *
      * <p>任何失败都返回 [source]——宁可让原版按老规矩报「资源包不兼容」，也不能因为
      * 我们的转换出错就让游戏加载不了任何包。
@@ -131,71 +129,20 @@ public final class ConversionService {
     }
 
     /**
-     * 本地包专用入口：{@code resourcepacks/} 目录下的直接子项。
-     *
-     * <p>三种结果：
-     *
-     * <ol>
-     *   <li><b>不是资源包</b>（父目录不对、读不出元数据、已兼容）→ 原样放行。
-     *       1.20.2+ 的拦截点 {@code PackDetector.detectPackResources} 是所有本地包
-     *       （资源包、数据包、世界内置包）的公共漏斗，它本身不知道自己在探测哪一类；
-     *       靠「父目录必须等于客户端 resourcepacks 目录」把数据包排除掉，比读调用栈或猜
-     *       {@code PackType} 都稳。</li>
-     *   <li><b>版本不匹配、已在 {@code options.txt} 里启用</b> → 完整转换。</li>
-     *   <li><b>版本不匹配、尚未启用</b> → 换成占位包（见 {@link PackPlaceholder}）。</li>
-     * </ol>
-     *
-     * <p>第 3 条同时解决两件事。其一是**时机**：这个拦截点在「打开资源包界面」时也会对
-     * 目录里每一项跑一遍（{@code PackSelectionModel.findNewPacks} →
-     * {@code PackRepository.reload}），无条件转换会让玩家只是进去看一眼就把目录里所有旧包
-     * 全转一遍。其二是**可见性**：1.21.9+ 的包可能只写 {@code min_format} / {@code max_format}，
-     * 老客户端读不出 {@code pack_format} 会直接把整个包从列表里丢掉，玩家根本没机会勾选它。
-     *
-     * <p>启用状态来自 {@link PackSelection}（读 {@code options.txt}）：玩家在界面里点「完成」
-     * 后原版先 {@code save()} 再 {@code reloadResourcePacks()}，所以真正要加载时这个列表已经
-     * 是新的。
+     * 本地包仅处理客户端 resourcepacks 的直接子项，且默认等到用户启用时才转换。
+     * 现代包在旧客户端上无法读出元数据也不伪装成可正常加载的资源包。
      */
     public Path resolveLocal(Path source) {
-        if (source == null || !paths.isInResourcePacksDir(source)) {
+        if (source == null || !config.enabled() || !config.convertLocalPacks()
+                || !paths.isInResourcePacksDir(source) || paths.isOwnOutput(source)) {
             return source;
         }
         try {
-            return resolveLocalChecked(source);
+            return isEnabled(source) ? resolve(source, PackKind.LOCAL) : source;
         } catch (RuntimeException e) {
             reportFailureOnce(source, e);
             return source;
         }
-    }
-
-    private Path resolveLocalChecked(Path source) {
-        if (!config.enabled() || !config.convertLocalPacks() || paths.isOwnOutput(source)) {
-            return source;
-        }
-
-        PackFormat target = GameVersion.current().packFormat();
-        if (!target.isKnown()) {
-            return source;
-        }
-
-        boolean isZip = Files.isRegularFile(source);
-        if (!isZip && !Files.isDirectory(source)) {
-            return source;
-        }
-
-        PackMetadata metadata = readMetadata(source, isZip);
-        if (metadata == null || metadata.supports(target.major())) {
-            // 读不到 pack.mcmeta 的不是资源包；已兼容的不需要我们插手。
-            return source;
-        }
-
-        if (isEnabled(source)) {
-            return resolve(source, PackKind.LOCAL);
-        }
-        if (metadata.hasLegacyPackFormat()) {
-            // 本版本能读出它的 pack_format，原版会正常列出（标记为不兼容），不必伪装。
-            return source;
-        }
-        return placeholder.create(source, isZip, metadata, target);
     }
 
     /** [source] 是否出现在 {@code options.txt} 的已启用列表里。 */
@@ -254,18 +201,23 @@ public final class ConversionService {
             // 读不到 pack.mcmeta 的东西不是资源包（或已损坏），交给原版处理。
             return source;
         }
-        if (metadata.supports(target.major())) {
+        if (!metadata.canUpgradeTo(target)) {
+            if (!metadata.supports(target)) {
+                ViaRpLog.debug("Not upgrading {}: declared formats {}, target {}",
+                        source.getFileName(), metadata.supportedFormats(), target);
+            }
             return source;
         }
-
         PackFormat from = metadata.primaryFormat();
-        if (!from.isKnown()) {
-            ViaRpLog.warn("{} declares no usable pack_format; leaving it untouched", source);
-            return source;
-        }
 
         ConverterEngine engine = ConverterEngines.engine();
         if (engine == null) {
+            return source;
+        }
+        // 旧引擎在迁移期不能夹取目标版本，更不能把 minor 升级变成降版。
+        if (from.major() < engine.minSupportedMajor() || target.major() > engine.maxSupportedMajor()
+                || from.minor() != 0 || target.minor() != 0) {
+            ViaRpLog.debug("No upgrade route from {} to {} for {}", from, target, source.getFileName());
             return source;
         }
 
@@ -364,25 +316,7 @@ public final class ConversionService {
                 PathIo.copyDirectory(source, unpacked);
             }
 
-            // RPC 覆盖不到的目标版本（>maxSupportedMajor）：转到它能转到的最高版本，
-            // 剩下的差距只靠改写 pack.mcmeta 声明——见 docs/DESIGN.md §3.3。
-            int clampedMajor = Math.min(target.major(), engine.maxSupportedMajor());
-            int effectiveFromMajor = Math.max(from.major(), engine.minSupportedMajor());
-            boolean metaOnly = clampedMajor == effectiveFromMajor;
-
-            if (clampedMajor != target.major()) {
-                ViaRpLog.info("Format {} is beyond the converter's range; converting {} to format {} "
-                                + "(the highest it supports) and declaring {}",
-                        target, source.getFileName(), Integer.valueOf(clampedMajor), target);
-            }
-
-            if (!metaOnly) {
-                engine.convert(unpacked, PackFormat.of(effectiveFromMajor), PackFormat.of(clampedMajor),
-                        config.verbose());
-            } else {
-                ViaRpLog.info("No converter step applies for {} ({} -> {}); "
-                        + "only pack.mcmeta will be rewritten", source.getFileName(), from, target);
-            }
+            engine.convert(unpacked, from, target, config.verbose());
 
             rewriteMetadata(unpacked, target);
 
@@ -407,7 +341,7 @@ public final class ConversionService {
                     target.major(),
                     target.minor(),
                     engine.describe(),
-                    metaOnly,
+                    false,
                     System.currentTimeMillis(),
                     payloadSize));
 

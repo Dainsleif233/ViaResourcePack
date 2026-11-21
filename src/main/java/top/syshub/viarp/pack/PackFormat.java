@@ -20,13 +20,13 @@ package top.syshub.viarp.pack;
 /**
  * 资源包格式版本号。
  *
- * <p>1.21.9 之前只有一个整数（major）；1.21.9 起 {@code pack.mcmeta} 允许写
- * {@code [major, minor]}，同一 major 内 minor 只表示「新增了可选特性」，
- * 因此**兼容性判定只看 major**，minor 仅用于写回元数据时保真。
+ * <p>格式 65 起使用 {@code [major, minor]}。原版按 major、minor 依次比较，
+ * 因此升版路径、兼容范围和缓存键都不能忽略 minor。
  */
 public final class PackFormat implements Comparable<PackFormat> {
 
     public static final PackFormat UNKNOWN = new PackFormat(-1, 0);
+    static final int MAX_MINOR = Integer.MAX_VALUE;
 
     private final int major;
     private final int minor;
@@ -53,7 +53,7 @@ public final class PackFormat implements Comparable<PackFormat> {
     }
 
     public boolean isKnown() {
-        return major >= 0;
+        return major >= 0 && minor >= 0;
     }
 
     @Override
@@ -83,6 +83,6 @@ public final class PackFormat implements Comparable<PackFormat> {
 
     @Override
     public String toString() {
-        return minor == 0 ? Integer.toString(major) : major + "." + minor;
+        return minor == MAX_MINOR ? major + ".*" : minor == 0 ? Integer.toString(major) : major + "." + minor;
     }
 }

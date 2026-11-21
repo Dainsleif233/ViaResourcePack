@@ -33,8 +33,8 @@ class PackMetadataTest {
         PackMetadata meta = PackMetadata.parse("{\"pack\":{\"pack_format\":4,\"description\":\"old\"}}");
 
         assertThat(meta.primaryFormat()).isEqualTo(PackFormat.of(4));
-        assertThat(meta.supports(4)).isTrue();
-        assertThat(meta.supports(15)).isFalse();
+        assertThat(meta.supports(PackFormat.of(4))).isTrue();
+        assertThat(meta.supports(PackFormat.of(15))).isFalse();
         assertThat(meta.description("fallback")).isEqualTo("old");
     }
 
@@ -46,9 +46,10 @@ class PackMetadataTest {
 
         assertThat(meta.supportedFormats().min()).isEqualTo(PackFormat.of(15));
         assertThat(meta.supportedFormats().max()).isEqualTo(PackFormat.of(22));
-        assertThat(meta.supports(15)).isTrue();
-        assertThat(meta.supports(22)).isTrue();
-        assertThat(meta.supports(23)).isFalse();
+        assertThat(meta.supports(PackFormat.of(15))).isFalse();
+        assertThat(meta.supports(PackFormat.of(16))).isTrue();
+        assertThat(meta.supports(PackFormat.of(22))).isTrue();
+        assertThat(meta.supports(PackFormat.of(23))).isFalse();
     }
 
     @Test
@@ -56,8 +57,8 @@ class PackMetadataTest {
         PackMetadata meta = PackMetadata.parse(
                 "{\"pack\":{\"pack_format\":32,\"supported_formats\":[32,46]}}");
 
-        assertThat(meta.supports(34)).isTrue();
-        assertThat(meta.supports(55)).isFalse();
+        assertThat(meta.supports(PackFormat.of(34))).isTrue();
+        assertThat(meta.supports(PackFormat.of(55))).isFalse();
     }
 
     @Test
@@ -68,19 +69,23 @@ class PackMetadataTest {
 
         assertThat(meta.primaryFormat()).isEqualTo(PackFormat.of(69, 0));
         assertThat(meta.supportedFormats().max()).isEqualTo(PackFormat.of(75, 2));
-        assertThat(meta.supports(75)).isTrue();
-        assertThat(meta.supports(88)).isFalse();
+        assertThat(meta.supports(PackFormat.of(75, 2))).isTrue();
+        assertThat(meta.supports(PackFormat.of(75, 3))).isFalse();
+        assertThat(meta.canUpgradeTo(PackFormat.of(65, 0))).isFalse();
+        assertThat(meta.canUpgradeTo(PackFormat.of(75, 1))).isFalse();
+        assertThat(meta.canUpgradeTo(PackFormat.of(75, 3))).isTrue();
     }
 
     @Test
-    void formatsKeyWinsOverSupportedFormats() throws IOException {
-        // 1.21.9+ 的 formats 与旧的 supported_formats 同时出现时，以新键为准。
+    void omittedMaximumMinorIncludesAllMinorsAndIgnoresOverlayKey() throws IOException {
+        // formats 是 overlay 键，不能代替 pack 段的 min_format / max_format。
         PackMetadata meta = PackMetadata.parse(
-                "{\"pack\":{\"pack_format\":69,\"formats\":{\"min_inclusive\":69,\"max_inclusive\":75},"
-                        + "\"supported_formats\":[1,2]}}");
+                "{\"pack\":{\"min_format\":[69],\"max_format\":75,\"formats\":[1,2]}}");
 
-        assertThat(meta.supports(70)).isTrue();
-        assertThat(meta.supports(2)).isFalse();
+        assertThat(meta.supports(PackFormat.of(75, 2048))).isTrue();
+        assertThat(meta.canUpgradeTo(PackFormat.of(75, 2048))).isFalse();
+        assertThat(meta.canUpgradeTo(PackFormat.of(76))).isTrue();
+        assertThat(meta.supports(PackFormat.of(2))).isFalse();
     }
 
     @Test
@@ -88,7 +93,7 @@ class PackMetadataTest {
         PackMetadata meta = PackMetadata.parse("{\"pack\":{\"description\":\"no format\"}}");
 
         assertThat(meta.hasFormat()).isFalse();
-        assertThat(meta.supports(15)).isFalse();
+        assertThat(meta.supports(PackFormat.of(15))).isFalse();
     }
 
     @Test
@@ -97,17 +102,17 @@ class PackMetadataTest {
                 "{\"pack\":{\"pack_format\":9,\"supported_formats\":[9,12],\"description\":\"keep me\"},"
                         + "\"language\":{\"xx\":{\"name\":\"X\",\"region\":\"Y\",\"bidirectional\":false}}}");
 
-        String rewritten = meta.withFormat(PackFormat.of(88, 0));
+        String rewritten = meta.withFormat(PackFormat.of(97, 1));
         PackMetadata reparsed = PackMetadata.parse(rewritten);
 
-        assertThat(reparsed.primaryFormat()).isEqualTo(PackFormat.of(88));
-        assertThat(reparsed.supportedFormats().max()).isEqualTo(PackFormat.of(88));
+        assertThat(reparsed.primaryFormat()).isEqualTo(PackFormat.of(97, 1));
+        assertThat(reparsed.supportedFormats().max()).isEqualTo(PackFormat.of(97, 1));
         assertThat(reparsed.description("")).isEqualTo("keep me");
         // 非 pack 段原样保留。
         assertThat(rewritten).contains("\"language\"").contains("\"bidirectional\"");
-        // 区间键必须被清掉，否则缓存产物会被误判为支持别的版本。
-        assertThat(rewritten).doesNotContain("supported_formats");
-        assertThat(rewritten).doesNotContain("min_format");
+        // 新产物只能声明实际转换过的一个格式。
+        assertThat(rewritten).doesNotContain("supported_formats").doesNotContain("pack_format");
+        assertThat(rewritten).contains("min_format").contains("max_format");
     }
 
     @Test

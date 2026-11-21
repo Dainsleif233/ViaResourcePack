@@ -40,9 +40,10 @@ public final class PackFormatRange {
         return max;
     }
 
-    /** 只按 major 判定：minor 只代表同 major 内的可选新增特性。 */
-    public boolean containsMajor(int major) {
-        return major >= min.major() && major <= max.major();
+    /** 用完整 major/minor 判断闭区间；未知格式不参与兼容判断。 */
+    public boolean contains(PackFormat format) {
+        return format.isKnown() && min.isKnown() && max.isKnown()
+                && format.compareTo(min) >= 0 && format.compareTo(max) <= 0;
     }
 
     @Override
