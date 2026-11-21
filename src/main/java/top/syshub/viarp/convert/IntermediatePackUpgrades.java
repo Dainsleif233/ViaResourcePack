@@ -111,14 +111,18 @@ final class IntermediatePackUpgrades {
                 MountSaddleUpgrades.apply(workspace);
                 break;
             case 52:
-                // 25w07a (02027c155)：post pass 从 program 析为独立 vertex_shader/fragment_shader。
-                warnAssets(workspace, 52, "原版改用渲染管线及独立 vertex_shader/fragment_shader；保留核心着色器和后处理，需人工迁移",
-                        "/shaders/core/", "/shaders/post/", "/post_effect/");
+                // 25w07a (02027c155)：精确匹配的原版后处理用独立 vertex_shader/fragment_shader。
+                PostEffectUpgrades.apply(entered, workspace);
+                warnAssets(workspace, 52, "原版改用渲染管线；自定义着色器需要检查独立 shader 字段和 include",
+                        "/shaders/core/", "/shaders/post/");
                 break;
             case 54:
                 moveTexturePairs(workspace, 54, new String[][] {
                         { "misc/enchanted_glint_entity", "misc/enchanted_glint_armor" }
                 });
+                break;
+            case 57:
+                PostEffectUpgrades.apply(entered, workspace);
                 break;
             case 60:
                 migrateMobEffectsAtlas(workspace);
@@ -142,6 +146,7 @@ final class IntermediatePackUpgrades {
                 new Sprite("widget/button", 0, 66, 200, 20, 3),
                 new Sprite("widget/button_highlighted", 0, 86, 200, 20, 3)));
         writeSprites(workspace, occupied, GUI + "icons.png", GUI + "sprites/", 256, hudSprites());
+        ClassicGuiSheets.apply(workspace);
     }
 
     private static List<Sprite> hudSprites() {

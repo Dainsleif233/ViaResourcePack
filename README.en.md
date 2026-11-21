@@ -47,7 +47,7 @@ Caches and temporary files live under `<game dir>/config/viaresourcepack/`; you 
 
 ## Compatibility
 
-- **Mods that accelerate resource pack loading** (e.g. PackForge): compatible. This mod only swaps *which file* vanilla opens; it never touches the internals of `FilePackResources`, so such mods index our converted packs as usual.
+- **Mods that accelerate resource pack loading** (e.g. PackForge): this mod replaces the path vanilla opens rather than changing the pack reader. Specific combinations with other mods have not been verified.
 - **Data packs**: out of scope.
 - **Built-in packs** (vanilla, Programmer Art, High Contrast): untouched.
 

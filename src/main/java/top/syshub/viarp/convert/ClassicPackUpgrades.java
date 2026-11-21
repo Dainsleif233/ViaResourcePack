@@ -123,7 +123,7 @@ final class ClassicPackUpgrades {
                 warnFile(workspace, 15, VANILLA + "texts/credits.json", "旧版 credits 的 titles 层级及页面呈现需核对 disciplines");
                 break;
             case 16:
-                upgradeGui(workspace);
+                IntermediatePackUpgrades.splitGuiAtlas(workspace);
                 break;
             case 17:
                 warnFile(workspace, 17, WIDGETS, "文本框和滚动条现在使用 widget/text_field{,_highlighted} 与 widget/scroller，未从旧纹理推测绘制");
@@ -683,14 +683,6 @@ final class ClassicPackUpgrades {
             }
         }
         warn(workspace, 13, glint, "保留原光效，并仅填充未提供的新光效位置；新版物品与实体混合效果可能不同");
-    }
-
-    private static void upgradeGui(UpgradeWorkspace workspace) throws IOException {
-        IntermediatePackUpgrades.splitGuiAtlas(workspace);
-        for (String name : new String[]{"bars.png", "advancements/widgets.png", "container/beacon.png",
-                "container/creative_inventory/tabs.png", "container/horse.png"}) {
-            warnFile(workspace, 16, VANILLA + "textures/gui/" + name, "新版使用独立 GUI 精灵；未推断旧图集坐标");
-        }
     }
 
     private static void rewriteAssets(UpgradeWorkspace workspace, int edge, UnaryOperator<String> modelId,
