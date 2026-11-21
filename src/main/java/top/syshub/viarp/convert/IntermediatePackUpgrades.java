@@ -87,8 +87,9 @@ final class IntermediatePackUpgrades {
                 splitMapIcons(workspace);
                 break;
             case 36:
-                warnAssets(workspace, 36, "后处理 pass、target、shader 源和 include 的结构有变化，保留原件，需人工迁移",
-                        "/shaders/", "/post_effect/");
+                OldPostEffectUpgrades.apply(workspace);
+                warnAssets(workspace, 36, "着色器程序及 include 结构变化，保留其余原件，需人工核对",
+                        "/shaders/");
                 break;
             case 37:
                 moveEquipmentTextures(workspace);
