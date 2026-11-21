@@ -8,6 +8,15 @@
 # 1.12.2 的 PNG blob 与 1.13/1.14.4 之一相同，并验证目标路径存在于 1.14.4。
 # atlas 补齐项另以 Mojang 官方客户端的 PNG 与模型消费槽核对；见 docs/research/atlas-format-4-paths.md。
 # 旧纹理 ID	新纹理 ID（minecraft 命名空间；PNG 与侧车使用同一规则）
+# 格式 4 原版方块模型的纹理槽与 1.12.2→1.13 像素一致；见 docs/research/classic-model-overrides.md。
+blocks/stone_granite	block/granite
+blocks/stone_diorite	block/diorite
+blocks/stone_andesite	block/andesite
+blocks/stone_granite_smooth	block/polished_granite
+blocks/stone_diorite_smooth	block/polished_diorite
+blocks/stone_andesite_smooth	block/polished_andesite
+blocks/tallgrass	block/grass
+blocks/deadbush	block/dead_bush
 blocks/beacon	block/beacon
 blocks/bedrock	block/bedrock
 blocks/bone_block_side	block/bone_block_side

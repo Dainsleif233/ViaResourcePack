@@ -71,7 +71,10 @@ final class ModernPackUpgrades {
         } else if (major == 71 && minor == 0) {
             migrateMipmapMetadata(workspace);
         } else if (major == 73 && minor == 0) {
-            warnAtlasSplit(workspace);
+            if (workspace.hasFile(VANILLA + "atlases/blocks.json")) {
+                workspace.warn("73.0: retained custom blocks atlas; review item sprite sources for the separate items atlas.");
+            }
+            ItemAtlasSplitDiagnostics.inspect(workspace);
         } else if (major == 83 && minor == 0) {
             inspectItemModels(workspace, true);
         } else if ((major == 86 && minor <= 1) || (major == 87 && minor == 0)) {
@@ -131,13 +134,6 @@ final class ModernPackUpgrades {
                 workspace.warn("71.0: explicit non-darkened mipmaps now use auto; cutout mipmaps may look different: "
                         + file);
             }
-        }
-    }
-
-    private static void warnAtlasSplit(UpgradeWorkspace workspace) throws IOException {
-        if (workspace.hasFile(VANILLA + "atlases/blocks.json")) {
-            workspace.warn("73.0: retained custom blocks atlas; review item sprite sources for the separate items "
-                    + "atlas. An item model must resolve all its sprites in one atlas.");
         }
     }
 

@@ -28,6 +28,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -296,8 +298,8 @@ final class ClassicPackUpgrades {
         List<String> files = workspace.files();
         Set<String> original = new HashSet<String>(files);
         Map<String, String> changes = new LinkedHashMap<String, String>();
-        Map<String, String> textures = flattenTextureTable();
         String textureDirectory = VANILLA + "textures/";
+        Map<String, String> textures = unambiguousTextureMoves(workspace, original, textureDirectory);
         for (String file : files) {
             if (file.startsWith(textureDirectory)) {
                 String stem = textureStem(file, textureDirectory);
@@ -322,7 +324,33 @@ final class ClassicPackUpgrades {
         rewriteAssets(workspace, 4, UnaryOperator.identity(),
                 id -> flattenTextureReference(workspace, id, textures),
                 id -> flattenStateModel(id, original), id -> language.getOrDefault(id, id), false);
+        ClassicModelOverrides.apply(workspace);
         convertLanguages(workspace, language);
+    }
+
+    private static Map<String, String> unambiguousTextureMoves(UpgradeWorkspace workspace, Set<String> files,
+                                                              String directory) throws IOException {
+        Map<String, String> textures = flattenTextureTable();
+        Set<String> occupied = foldedFiles(files);
+        Map<String, Integer> targets = new HashMap<String, Integer>();
+        List<String> present = new ArrayList<String>();
+        for (Map.Entry<String, String> pair : textures.entrySet()) {
+            String source = directory + pair.getKey() + ".png";
+            if (files.contains(source) || files.contains(source + ".mcmeta")) {
+                present.add(pair.getKey());
+                targets.merge(pair.getValue(), 1, Integer::sum);
+            }
+        }
+        for (String id : present) {
+            String mapped = textures.get(id);
+            String target = directory + mapped + ".png";
+            if (targets.get(mapped) > 1 || occupied.contains(target) || occupied.contains(target + ".mcmeta")
+                    || Files.exists(workspace.path(target)) || Files.exists(workspace.path(target + ".mcmeta"))) {
+                warn(workspace, 4, id, "多个旧来源或已有目标纹理/侧车；保留旧纹理和原引用，不覆盖 " + target);
+                textures.remove(id);
+            }
+        }
+        return textures;
     }
 
     private static Map<String, String> renameEarlyTextures(UpgradeWorkspace workspace, List<String> files)
@@ -876,7 +904,7 @@ final class ClassicPackUpgrades {
         return end == -1 ? "" : file.substring(7, end);
     }
 
-    private static Set<String> foldedFiles(List<String> files) {
+    private static Set<String> foldedFiles(Collection<String> files) {
         Set<String> result = new HashSet<String>();
         for (String file : files) {
             result.add(fold(file));
