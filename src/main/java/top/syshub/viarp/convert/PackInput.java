@@ -100,7 +100,7 @@ final class PackInput {
                 if (name.regionMatches(true, 0, "assets/", 0, "assets/".length())) {
                     return unknown();
                 }
-                if (!atlas && !loose && !entry.isDirectory() && isStandaloneTexture(name, described)) {
+                if (!atlas && !loose && !entry.isDirectory() && isStandaloneLegacyAsset(name, described)) {
                     loose = true;
                 }
             }
@@ -142,16 +142,16 @@ final class PackInput {
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
                 String name = source.relativize(file).toString().replace('\\', '/');
-                loose[0] = attributes.isRegularFile() && isStandaloneTexture(name, described);
+                loose[0] = attributes.isRegularFile() && isStandaloneLegacyAsset(name, described);
                 return loose[0] || --remaining == 0 ? FileVisitResult.TERMINATE : FileVisitResult.CONTINUE;
             }
         });
         return legacy(false, loose[0]);
     }
 
-    private static boolean isStandaloneTexture(String name, boolean described) {
+    private static boolean isStandaloneLegacyAsset(String name, boolean described) {
         return LegacyTextureUpgrade.isKnownLooseTexture(name)
-                || (described && LegacyTextureUpgrade.isKnownStandaloneTexture(name));
+                || (described && LegacyTextureUpgrade.isKnownStandaloneAsset(name));
     }
 
     private static boolean isFile(Path path) {

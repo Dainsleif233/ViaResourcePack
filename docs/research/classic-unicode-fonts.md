@@ -2,6 +2,8 @@
 
 ## 锚点与无操作边
 
+- **纹理包 → 格式 1**：1.5.2 客户端（SHA-1 `465378c9dc2f779ae1d6e8046ebc46fb53a57968`）的 `awv.d()V @0–22` 通过 `bju.e():bjt` 取当前纹理包流 `/font/glyph_sizes.bin`。1.6.1 客户端（SHA-1 `17e2c28fb54666df5640b2c822ea8042250ef592`）的 `auz.e()V @0–31` 改经资源管理器打开默认命名空间下的 `font/glyph_sizes.bin`。两份原版表均为 65536 字节，SHA-256 同为 `5ea60550bc768960cb1bba0f45103b89ecce439b9669521fd941a215b42a3d4c`；1.12.2 和 1.14.4 也同。把有效用户表原样搬到 `assets/minecraft/font/glyph_sizes.bin`，和已经迁移的旧 Unicode 页一起供后续规则使用。旧表不完整时保留原件，不覆盖原版表。
+
 - 经 [Mojang 版本清单](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) 核对官方客户端 SHA-1：1.8.9、1.9、1.10.2、1.11、1.12.2 的原版读取器都使用 `textures/font/ascii.png`、`textures/font/ascii_sga.png`、`font/glyph_sizes.bin`、`textures/font/unicode_page_%02x.png`。对应类分别为 `ave/avn`、`bcf/bct`、`bcx/bdl`、`beq/bfe`、`bib/bip`。格式 1→2 和 2→3 没有字体路径或 provider 结构迁移；PNG 重编码、原版图案更新不等于自定义包格式变更。
 - **格式 4 内部变化**：1.13-pre5（`f3262055c586a075fc84f9d4bc76b3cf1a72d69c`）仍由 `cep/cfg` 读取固定位置；pre6 处于过渡态；pre7（`0b5d9df7bc2d0e4fd00d0bf7cf4409b999567497`）首次确认原版提供 `font/default.json` 和 `font/alt.json`。1.13 正式版 `chu/chv/cih` 与 1.14.4 `dar$1/das/dbc` 均加载 provider 栈并以首个可用字形为准；强制 Unicode 时对默认字体只保留旧 Unicode provider。1.12.2→1.13 的 222 个 Unicode PNG 和 65536 字节宽度表逐字节相同，旧路径继续被引用。
 - 1.12.2 硬编码 ASCII 字符表的全部 247 个非 NUL 项，在 1.13/1.14.4 的 ASCII provider 中仍处于同一槽位。裸 `ascii.png` 的普通字形不需搬运，例如 `A`（槽 65）。但旧版默认普通模式的 `é`（槽 130）、`α`（槽 224）在新默认字体分别由前置的 `accented.png`、`nonlatin_european.png` 遮蔽；1.13 共 76 项重叠，1.14.4 共 81 项。不应把 PNG 仍被读取说成所有字形都保留。仅在读者、顺序、实际修改槽和显式定义冲突都可证明时，才可能用一个引用原图、只暴露遮蔽槽的 bitmap provider 补充；本规则不做该推断。

@@ -28,6 +28,7 @@ environment/snow.png	textures/environment/snow.png
 environment/sun.png	textures/environment/sun.png
 font/alternate.png	textures/font/ascii_sga.png
 font/default.png	textures/font/ascii.png
+font/glyph_sizes.bin	=
 font/glyph_0A.png	textures/font/unicode_page_0a.png
 font/glyph_0B.png	textures/font/unicode_page_0b.png
 font/glyph_0C.png	textures/font/unicode_page_0c.png

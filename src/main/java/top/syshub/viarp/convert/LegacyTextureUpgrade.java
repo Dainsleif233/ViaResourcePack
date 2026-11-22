@@ -46,6 +46,8 @@ final class LegacyTextureUpgrade {
     private static final String NAMESPACE = "assets/minecraft/";
     private static final String BLOCKS = "textures/blocks/";
     private static final String ITEMS = "textures/items/";
+    private static final String GLYPH_WIDTHS = "font/glyph_sizes.bin";
+    private static final int GLYPH_WIDTH_BYTES = 1 << 16;
     private static final int GRID = 16;
     private static final int MAX_SIDE = 4096;
     private static final long MAX_PIXELS = (long) MAX_SIDE * MAX_SIDE;
@@ -64,9 +66,9 @@ final class LegacyTextureUpgrade {
         return inLooseDomain(path) && Rules.PATHS.containsKey(path);
     }
 
-    /** 单改 GUI、护甲等的纹理包可能既没有图集，也没有 1.5 方块/物品的散图。 */
-    static boolean isKnownStandaloneTexture(String path) {
-        List<String> targets = path.endsWith(".png") ? Rules.PATHS.get(path) : null;
+    /** 单改 GUI、护甲或字体的包也可能不包含图集与方块/物品散图。 */
+    static boolean isKnownStandaloneAsset(String path) {
+        List<String> targets = path.endsWith(".png") || GLYPH_WIDTHS.equals(path) ? Rules.PATHS.get(path) : null;
         return targets != null && !targets.isEmpty();
     }
 
@@ -159,6 +161,10 @@ final class LegacyTextureUpgrade {
             }
             if (declaredTargets.isEmpty()) {
                 removed.add(source);
+                continue;
+            }
+            if (GLYPH_WIDTHS.equals(source) && Files.size(workspace.path(source)) != GLYPH_WIDTH_BYTES) {
+                workspace.warn("旧字体宽度表 " + source + " 长度不是 65536 字节，保留原文件，不替换原版字宽。");
                 continue;
             }
             boolean png = source.endsWith(".png");
