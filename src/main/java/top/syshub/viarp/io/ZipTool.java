@@ -39,6 +39,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
+import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
@@ -107,6 +108,9 @@ public final class ZipTool {
                         crc.update(buffer, 0, count);
                         output.write(buffer, 0, count);
                     }
+                } catch (ZipException e) {
+                    String label = name.replaceAll("\\p{Cntrl}", "?");
+                    throw new IOException("Cannot read ZIP entry " + label + ": " + e.getMessage(), e);
                 }
                 if (entry.getSize() != written || entry.getCrc() != crc.getValue()) {
                     throw new IOException("ZIP entry size or checksum does not match its contents: " + name);

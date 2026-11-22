@@ -119,6 +119,7 @@ final class IntermediatePackUpgrades {
                 PostEffectUpgrades.apply(entered, workspace);
                 break;
             case 60:
+                PanoramaCubeMapUpgrade.upgrade(workspace);
                 migrateMobEffectsAtlas(workspace);
                 break;
             default:

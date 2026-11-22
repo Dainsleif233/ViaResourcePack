@@ -35,7 +35,7 @@ import top.syshub.viarp.pack.PackMetadata;
 final class ResourcePackUpgrader {
 
     // 产物、源视图或缓存内诊断有变化时递增；不得重用旧规则的结果。
-    static final String RULES_VERSION = "builtin-30";
+    static final String RULES_VERSION = "builtin-32";
 
     private ResourcePackUpgrader() {
     }
@@ -82,6 +82,9 @@ final class ResourcePackUpgrader {
             if (paintingBoundary <= 5 && entered.major() == paintingBoundary) {
                 ClassicPaintingUpgrades.apply(pack);
             }
+        }
+        if (from.major() >= 44) {
+            LegacyItemReferenceRepair.apply(pack);
         }
         // 对旧纹理包，格式 1 步骤负责从 pack.txt 生成原有描述。
         String migratedText = pack.readText("pack.mcmeta", "升级结果");
