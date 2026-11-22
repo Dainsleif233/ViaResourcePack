@@ -1,0 +1,6 @@
+{
+  "pack.incompatible.confirm.old": "This pack was made for an older version of Minecraft and may not work correctly. When you enable an older resource pack and click Done, ViaResourcePack can try to convert it without changing the original. The first conversion may take some time.",
+  "pack.incompatible.old": "(Made for older Minecraft versions)",
+  "resourcePack.incompatible.confirm.old": "This pack was made for an older version of Minecraft and may not work correctly. When you enable an older resource pack and click Done, ViaResourcePack can try to convert it without changing the original. The first conversion may take some time.",
+  "resourcePack.incompatible.old": "(Made for older Minecraft versions)"
+}

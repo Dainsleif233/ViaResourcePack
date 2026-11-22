@@ -1,0 +1,6 @@
+{
+  "pack.incompatible.confirm.old": "此包是为旧版 Minecraft 制作的，可能无法正常工作。启用旧版资源包并点击「完成」后，ViaResourcePack 可尝试转换，不会修改原包。首次转换可能需要一些时间。",
+  "pack.incompatible.old": "（为旧版 Minecraft 制作）",
+  "resourcePack.incompatible.confirm.old": "此包是为旧版 Minecraft 制作的，可能无法正常工作。启用旧版资源包并点击「完成」后，ViaResourcePack 可尝试转换，不会修改原包。首次转换可能需要一些时间。",
+  "resourcePack.incompatible.old": "（为旧版 Minecraft 制作）"
+}
