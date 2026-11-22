@@ -13,6 +13,8 @@ import java.io.File
  * @param java       本族编译目标与 mixin compatibilityLevel 的 Java 版本
  * @param localHook  本地资源包拦截方案（见 docs/DESIGN.md §1.2）
  * @param serverHook 服务器资源包拦截方案（见 docs/DESIGN.md §1.3）
+ * @param reloadHook 原版菜单提交的生命周期入口
+ * @param reloadUi  与客户端屏幕 ABI 对应的 UI 桥
  */
 data class McAdapter(
     val version: String,
@@ -20,7 +22,9 @@ data class McAdapter(
     val obfuscated: Boolean,
     val java: Int,
     val localHook: String,
-    val serverHook: String
+    val serverHook: String,
+    val reloadHook: String,
+    val reloadUi: String
 ) {
     val projectPath: String get() = "adapters:mc:$version"
 
@@ -37,11 +41,16 @@ data class McAdapter(
     /** 服务器包 hook 对应的共享源码目录（相对 rootDir）。 */
     val serverHookDir: String get() = "adapters/shared/server/$serverHook"
 
+    val reloadHookDir: String get() = "adapters/shared/reloadHook/$reloadHook"
+
+    val reloadUiDir: String get() = "adapters/shared/reloadUi/$reloadUi"
+
     /** 该族启用的 mixin 类名（相对 mixin 配置的 package）。 */
     val mixins: List<String>
         get() = listOf(
             LOCAL_MIXINS[localHook] ?: error("$projectPath: unknown localHook '$localHook'"),
-            SERVER_MIXINS[serverHook] ?: error("$projectPath: unknown serverHook '$serverHook'")
+            SERVER_MIXINS[serverHook] ?: error("$projectPath: unknown serverHook '$serverHook'"),
+            RELOAD_MIXINS[reloadHook] ?: error("$projectPath: unknown reloadHook '$reloadHook'")
         )
 
     /** Mixin 配置里的 `compatibilityLevel`。 */
@@ -60,6 +69,12 @@ data class McAdapter(
             "setServerPack" to "server.ClientPackSourceMixin",
             "setServerPackDownloaded" to "server.DownloadedPackSourceLegacyMixin",
             "loadRequestedPacks" to "server.DownloadedPackSourceMixin"
+        )
+
+        val RELOAD_MIXINS = mapOf(
+            "selectScreen" to "reload.SelectScreenReloadMixin",
+            "optionsScreen" to "reload.OptionsScreenReloadMixin",
+            "options" to "reload.OptionsReloadMixin"
         )
     }
 }
@@ -93,7 +108,9 @@ class AdapterMatrix(val mc: List<McAdapter>) {
                     obfuscated = row.boolean("obfuscated"),
                     java = row.int("java"),
                     localHook = row.string("localHook"),
-                    serverHook = row.string("serverHook")
+                    serverHook = row.string("serverHook"),
+                    reloadHook = row.string("reloadHook"),
+                    reloadUi = row.string("reloadUi")
                 )
             }
             require(mc.isNotEmpty()) { "$RELATIVE_PATH declares no [[mc]] adapters" }

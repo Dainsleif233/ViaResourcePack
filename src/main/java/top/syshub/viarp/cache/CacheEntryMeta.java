@@ -71,8 +71,8 @@ public final class CacheEntryMeta {
 
     public static CacheEntryMeta read(Path dir) throws IOException {
         Path file = dir.resolve(FILE_NAME);
-        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("Missing " + FILE_NAME + " in " + dir);
+        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS) || Files.size(file) > 64 * 1024) {
+            throw new IOException("Missing or oversized " + FILE_NAME + " in " + dir);
         }
         Map<String, Object> root = Json.parseObject(PathIo.readString(file));
         long version = readLong(root, "formatVersion");

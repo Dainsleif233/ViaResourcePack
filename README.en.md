@@ -8,14 +8,14 @@ A single jar supports Minecraft **1.14.4–26.3**. Version 2.0 **does not downgr
 
 ## What it does
 
-- **Local packs:** Supports ZIP and folder packs. By default, upgrade runs when you enable a pack and confirm, not when you browse the list. Recognized texture packs without `pack.mcmeta` get a selectable placeholder.
+- **Local packs:** Supports ZIP and folder packs. By default, upgrade runs when you enable a pack and confirm, not when you browse the list. Recognized texture packs without `pack.mcmeta` get a selectable placeholder. A valid cached result appears as compatible even while the pack is disabled. Browsing the list does not rebuild a cache miss.
 - **Server and world-bundled packs:** Upgrades run after vanilla has the file, including vanilla cache hits. On clients through 1.20.2, a previously upgraded pack can also be reused directly by the server's declared content hash.
 - **Migrations by pack format:** Modern major and minor versions are distinct. The catalog includes 26.4-s10 (104.0), but the 26.3 target is 97.1. Newer snapshot packs are not downgraded to it.
 - **Caching:** Results are separated by source contents, target format, and migration rules. Failed upgrades leave the original unchanged and are logged.
 
 ## Installation
 
-Requires Fabric Loader ≥ 0.15.0. **Fabric API is not required.**
+Requires Fabric Loader ≥ 0.15.0. **Fabric API is not required.** ViaResourcePack replaces the menu warning for older resource packs only when the Fabric API resource loader is installed.
 
 Drop `ViaResourcePack-<version>.jar` into `mods/` — the jar includes all version adapters. No separate converter is needed.
 
@@ -43,7 +43,9 @@ After the first launch a config file is generated at `<game dir>/config/viaresou
 | `maxCacheMegabytes`       | Cache size limit; old entries are evicted by creation time when exceeded                                                              |
 | `verbose`                 | Show the format migration route in the normal game log when a pack is converted                                                       |
 
-Caches and temporary files live under `<game dir>/config/viaresourcepack/`; you can delete `cache/` after exiting Minecraft; the next launch will re-create needed outputs.
+By default, `cache/`, temporary `work/`, and placeholder `stubs/` all live under `<game dir>/resourcepacks/.viaresourcepack/`. Only configuration is written under `<game dir>/config/viaresourcepack/`. Existing directories are not moved or deleted automatically. The mod's private `.viaresourcepack` directory has no root `pack.mcmeta`, so it does not show up as a pack. Do not put packs there: if that name is already used by another file, directory, or link, the mod will neither take it over nor delete it. You can delete the active `cache/` after exiting Minecraft; needed outputs will be rebuilt.
+
+The old `config/viaresourcepack/cache/` is never moved or deleted automatically. The JVM option `-Dviarp.cacheDir=<directory>` keeps its previous behavior: it sets the common root for configuration, temporary files, and `cache/`. Do not point the option at the scanned resource-pack directory or one of its children. To keep the old cache location, point it at `<game dir>/config/viaresourcepack` (not its `cache/` subdirectory). Cached results still need to match the source contents, target format, and current migration rules.
 
 ## Compatibility
 
@@ -55,7 +57,7 @@ Caches and temporary files live under `<game dir>/config/viaresourcepack/`; you 
 
 Only assets with known equivalents can be migrated automatically. Unmapped cells in old texture atlases, removed resources, and some custom models, shaders and mod-specific formats may need manual work. The log lists detected issues and points to `warnings.txt` next to the cached pack, where the report remains available on cache hits.
 
-The first upgrade runs during resource loading and may pause the game for large packs. Later loads can reuse the cached result. If Minecraft 26.x logs that it removed a stale incompatibility flag but does not load the pack in that pass, re-enable it in the pack screen or exit normally and restart.
+Clicking Done in the pack screen prepares local packs on background workers. The screen shows batch progress, the pack being processed, and any failed pack names. Successfully prepared packs retain their vanilla order. Startup and F3+T still use the synchronous path, and Minecraft’s own reload may still pause briefly. If Minecraft 26.x logs that it removed a stale incompatibility flag but does not load the pack in that pass, re-enable it in the pack screen or exit normally and restart.
 
 ### How can I check the result?
 
@@ -71,7 +73,7 @@ Use JDK 25 and the repository's Gradle wrapper:
 
 ```bash
 ./gradlew build                       # compile, test and package
-./gradlew universal verifyUniversalJar # package and check seven nested adapters
+./gradlew universal verifyUniversalJar # package and check eight nested adapters
 ./gradlew test                        # unit tests
 ```
 

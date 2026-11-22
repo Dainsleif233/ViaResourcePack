@@ -76,7 +76,9 @@ PackSelectionScreen.onClose
 
 旧纹理包没有根部 `pack.mcmeta`，原版不会列出。ViaResourcePack 只对可识别且尚未启用的旧纹理包提供占位目录 `stubs/<源文件名>/`，写目标格式的空壳元数据和提示。保存选择后，下一次仓库探测返回完整的升级产物。占位目录名与源文件名一致（包括 `.zip`）。
 
-有有效元数据的旧资源包由原版列出；较新格式包保持原样，不用占位伪装为兼容。
+有有效元数据的旧资源包由原版列出。浏览时也可复用已有产物：仅在源内容 SHA-1、形态、完整目标格式和规则均匹配，且产物根元数据实际声明目标格式时交给原版。原版以原条目 ID 读产物，因而不会显示旧版警告。浏览未启用且没有缓存的包不启动转换；较新格式保持原样。
+
+与兼容性判定无关的简体中文、英语旧版确认文案由模组语言资源提供。安装 Fabric API 资源加载器时这些资源覆盖原版语言；只有 Loader 时使用原版文本。
 
 ### 1.3 服务器资源包
 
@@ -141,13 +143,18 @@ checkHash(declaredHash, file);              // 之后才校验内容
 
 ### 1.4 时序与线程
 
-- 本地包：`detectPackResources` 在 `PackRepository.reload()` 里同步执行（启动、进资源包界面、F3+T）。进界面时靠 §1.2.1 的启用判据挡掉未安装的包，所以默认仅已启用的本地包会升级。
-- 服务器包：`loadRequestedPacks` 在主线程 `runAllUpdates()` → `startReload()` 内同步执行。
+本地资源包菜单保存 `options.txt` 后，只拦截该提交链对 `Minecraft.reloadResourcePacks()Ljava/util/concurrent/CompletableFuture;` 的调用；不全局拦截正在运行的服务器、世界或原版待处理重载。混淆版本的目标调用为 `class_310.method_1521`，包含描述符在内每个目标方法仅匹配一次。
 
-转换是**阻塞**的（解压 → 转换 → 重打包），与原版本来要在这里做的 IO 同量级，但大包首次会明显变慢。缓解：
+| 客户端范围 | reloadHook | 原版发起点（混淆版标出 intermediary） |
+|------------|------------|---------------------------------------|
+| 1.14.4 – 1.15.2 | `selectScreen` | `class_519.method_19919(Lnet/minecraft/class_4185;)V`，选包确认按钮回调 |
+| 1.16 – 1.19.3 | `optionsScreen` | `OptionsScreen.updatePackList(PackRepository)V`，`class_429.method_29975(Lnet/minecraft/class_3283;)V` |
+| 1.19.4 – 1.21.11 | `options` | `Options.updateResourcePacks(PackRepository)V`，`class_315.method_49598(Lnet/minecraft/class_3283;)V` |
+| 26.1 – 26.3 | `options` | `Options.updateResourcePacks(PackRepository)V`，26.2 起屏幕由 `Minecraft.gui` 管理 |
 
-1. 按源内容命中缓存时，跳过解包、迁移和打包（§4）。
-2. 只在日志里输出进度，不碰 GUI——各版本的 GUI API 差异太大，为一个进度条引入 7 份 UI 适配不值得。
+- 本地菜单提交：把整个批次交给有界工作池，进度页继续由客户端线程刷新；单包失败保留原路径并显示包名。批次就绪、原版没有待处理重载时，回到客户端线程发起一次原版重载；不包装 `PackResources`，也不改写原版的选择顺序。
+- 服务器与世界：1.20.3+ 的 `loadRequestedPacks` 已提供整组路径，批内并行；原版同步入口仍要等该批就绪。旧服务器回调只有单包。启动以及 F3+T 不经过菜单提交，继续使用原版同步入口。
+- 工作者最多 4 个，按 CPU 和 JVM 最大堆大小收缩；一个逻辑处理器或少量堆时至少 1 个工作者。缓存命中跳过解包、迁移和打包；同一完整缓存键只由一个任务发布产物。界面百分比按已处理包数，不估算压缩字节或剩余时间。
 
 ---
 
@@ -159,17 +166,18 @@ checkHash(declaredHash, file);              // 之后才校验内容
 |------------|------------------|------------------|---------------------------|------|------|
 | `1.14.4`   | 1.14.4 – 1.15.2  | `createSupplier` | `setServerPack`           | 是   | 8    |
 | `1.16`     | 1.16 – 1.19.2    | `createSupplier` | `setServerPack`           | 是   | 8    |
-| `1.19.3`   | 1.19.3 – 1.20.1  | `folderDetector` | `setServerPackDownloaded` | 是   | 17   |
+| `1.19.3`   | 1.19.3           | `folderDetector` | `setServerPackDownloaded` | 是   | 17   |
+| `1.19.4`   | 1.19.4 – 1.20.1  | `folderDetector` | `setServerPackDownloaded` | 是   | 17   |
 | `1.20.2`   | 1.20.2           | `packDetector`   | `setServerPackDownloaded` | 是   | 17   |
 | `1.20.3`   | 1.20.3 – 1.20.4  | `packDetector`   | `loadRequestedPacks`      | 是   | 17   |
 | `1.20.5`   | 1.20.5 – 1.21.11 | `packDetector`   | `loadRequestedPacks`      | 是   | 21   |
 | `26.1`     | 26.1 – 26.3      | `packDetector`   | `loadRequestedPacks`      | 否   | 25   |
 
-七个适配器共用同一个 mod id `viarp-adapter-mc`，版本号 `<modVersion>-<mcVersion>`，`depends.minecraft` 写 `>=<mcVersion>`。Fabric Loader 在同 id 候选中挑「满足依赖且版本最高」的一个，因此跑在 1.21.4 时只有 `1.20.5` 适配器被选中（`26.1` 因 `minecraft >= 26.1` 不满足而淘汰）。`:validateAdapterMatrix` 会把这套选择逻辑模拟一遍。
+八个适配器共用同一个 mod id `viarp-adapter-mc`，版本号 `<modVersion>-<mcVersion>`，`depends.minecraft` 写 `>=<mcVersion>`。Fabric Loader 在同 id 候选中挑「满足依赖且版本最高」的一个，因此跑在 1.21.4 时只有 `1.20.5` 适配器被选中（`26.1` 因 `minecraft >= 26.1` 不满足而淘汰）。`:validateAdapterMatrix` 会把这套选择逻辑模拟一遍。
 
-26.3 复用 `26.1` 适配器：Minecraft 参考仓库的 26.3 版本提交 `634debadbbb7d440370f6ad29a86d1587058ce76` 中，两处目标及路径参数的用法均未改变，原有 `>=26.1` 已匹配，无需新增适配器。[Mojang 的 26.3 版本元数据](https://piston-meta.mojang.com/v1/packages/ead839cbccf0ddf013c3f935f2840080b5cb0d26/26.3.json) 确认 Java 25（`java-runtime-epsilon`），且未发布 `client_mappings`。
+26.3 复用 `26.1` 适配器：Minecraft 参考仓库的 26.3 版本提交 `634debadbbb7d440370f6ad29a86d1587058ce76` 中，本地与服务器路径拦截点的用法均未改变，原有 `>=26.1` 已匹配。菜单重载调用点也不变，屏幕所有者从 `Minecraft` 迁到 `Gui` 的差异由界面桥处理。[Mojang 的 26.3 版本元数据](https://piston-meta.mojang.com/v1/packages/ead839cbccf0ddf013c3f935f2840080b5cb0d26/26.3.json) 确认 Java 25（`java-runtime-epsilon`），且未发布 `client_mappings`。
 
-mixin 源码不放在各适配器目录下，而是集中在 `adapters/shared/{common,local/<hook>,server/<hook>}`，由 `viarp.mc.adapter` 插件按矩阵挂进对应适配器的 sourceSet。这样「1.20.3 与 1.20.5 的 hook 完全相同」这件事在源码层面就是同一份文件，不会漂移。
+mixin 源码不放在各适配器目录下，而是集中在 `adapters/shared/{common,local/<hook>,server/<hook>,reloadHook/<hook>,reloadUi/<bridge>}`，由 `viarp.mc.adapter` 插件按矩阵挂进对应适配器的 sourceSet。这样「1.20.3 与 1.20.5 的 hook 完全相同」这件事在源码层面就是同一份文件，不会漂移。
 
 `26.1+` 的游戏 jar 已带 Mojang 名，不需要映射表，构建用 `fabric-loom` + `jar`；1.21.11 及以下用 `fabric-loom-remap` + `remapJar` + `officialMojangMappings()`。
 
@@ -194,9 +202,11 @@ mixin 源码不放在各适配器目录下，而是集中在 `adapters/shared/{c
 
 规则证据见 [旧纹理](research/legacy-texture-packs.md)、[旧图集共享坐标](research/legacy-atlas-expansion.md)、[跨版重绘的地形格](research/legacy-atlas-semantic.md)、[经典格式](research/classic-pack-formats.md)、[经典 PNG 路径](research/early-png-paths.md)、[经典实体纹理](research/classic-entity-textures.md)、[经典绘画](research/classic-paintings.md)、[经典声音](research/classic-sounds.md)、[经典方块状态](research/classic-blockstates.md)、[独立模型](research/classic-model-overrides.md)、[旧 Unicode 字体](research/classic-unicode-fonts.md)、[TrueType 度量边界](research/truetype-font-boundary.md)、[经典 GUI 图集](research/classic-gui-sheets.md)、[经典控件](research/classic-widget-details.md)、[早期反色后处理](research/old-post-effect-upgrades.md)、[现代后处理](research/post-effect-upgrades.md)、[出生蛋双层纹理](research/spawn-egg-boundary.md)、[物品分图集诊断](research/item-atlas-split.md)、[特殊物品姿态](research/special-item-transforms.md)、[弓与钓竿谓词](research/classic-item-predicates.md)、[计时与定位拨盘](research/clock-compass-items.md)、[现代着色器诊断](research/modern-shader-boundaries.md)、[现代格式](research/modern-pack-formats.md)。新增会改变产物或缓存报告的规则时，更新 `ResourcePackUpgrader.RULES_VERSION`。
 
+通用 JAR 的 `viarp/migrations/` 下有制表符分隔的内置数据表（TSV）：旧图集坐标、纹理与语言键改名、音效事件和文件路径、用于识别原版实体贴图的 RGBA 指纹，以及旧出生蛋染色。Java 规则按对应格式读取这些表；它们不是外置依赖、用户配置或转换缓存。
+
 ## 4. 缓存
 
-缓存根目录为 `<gameDir>/config/viaresourcepack/`，可用 `-Dviarp.cacheDir` 覆盖。条目路径含源 SHA-1、ZIP/目录形态、完整目标格式和内置规则指纹，`meta.json` 必须与键匹配。命中时还检查目录产物是否有非空根声明；ZIP 产物另查文件长度和可读的目录索引。这些检查不过就忽略旧产物并重新转换，不逐个核对资源内容。ZIP 按原始字节计算 SHA-1，以兼容旧版服务器声明；目录散列排序后的类型、相对路径和定长文件摘要。缓存命中不依赖文件的 mtime。检测到迁移问题时，把有限的 UTF-8 `warnings.txt` 与产物放在同一缓存条目中，再写完才允许命中的 `meta.json`。报告不进包，日志只预览前 8 条并标出报告路径。
+持久缓存默认位于 `<gameDir>/resourcepacks/.viaresourcepack/cache/`，不在隐藏根写 `pack.mcmeta`，因此原版不会把它列为可选包。`work/` 和 `stubs/` 同样移到 `.viaresourcepack/` 下；`<gameDir>/config/viaresourcepack/` 只写配置。显式 `-Dviarp.cacheDir` 仍按旧约定覆盖数据根；旧缓存不自动搬动或删除。条目路径含源 SHA-1、ZIP/目录形态、完整目标格式和内置规则指纹，`meta.json` 必须与键匹配。命中时解析产物根元数据确认目标声明，ZIP 另查文件长度和索引可读性。这些检查不过就忽略旧产物；启用时才重转，不逐个核对产物资源内容。ZIP 按原始字节计算 SHA-1，以兼容旧版服务器声明；目录散列排序后的类型、相对路径和定长文件摘要。缓存命中不依赖文件的 mtime。检测到迁移问题时，把有限的 UTF-8 `warnings.txt` 与产物放在同一缓存条目中，再写完才允许命中的 `meta.json`。报告不进包，日志只预览前 8 条并标出报告路径。
 
 ZIP 产物按路径排序且时间戳固定；目录仍输出为目录。同一运行中仅在首次使用缓存前按大小上限淘汰最早创建的条目，避免删掉原版已拿到的产物。退出游戏后删 `cache/` 不影响源包。
 
@@ -206,35 +216,37 @@ ZIP 产物按路径排序且时间戳固定；目录仍输出为目录。同一�
 
 ## 5. 构建
 
-- Gradle wrapper 9.7.0（腾讯镜像），Maven 走阿里云，Loom 的游戏资源走 BMCLAPI。
+- Gradle wrapper 9.9.2、Loom 1.19.4；Maven 与游戏资源镜像由构建配置管理。
 - **JDK 25 编译 Java 8 字节码**：core 用 `-source 8 -target 8`，**不是** `--release 8`。`--release 8` 会把可见的平台 API 也限制到 JDK 8，于是引用 MC 里的 record 类型（class-file 65/69）时会报「找不到 `java.lang.Record`」；`-source/-target` 只约束我们自己产出的字节码版本，已实测可以正常引用 class-file 69 的 API 并产出 major=52 字节码。
 - 各适配器的 Java 目标提到该族的**最低 JRE**（见 §2），mixin `compatibilityLevel` 同步。原因：Mixin 会校验「mixin 类字节码版本 vs 目标类字节码版本」，把注入 Java 21/25 类的 mixin 声明成 `JAVA_8` 有踩坑风险。core 仍是 Java 8 字节码，它才是决定最低运行门槛的那一部分。
 - 版本矩阵单一数据源 `gradle/adapters.toml`，由 `settings.gradle.kts`（它自己那几行小解析器）与 buildSrc 的 `viarp.mc.adapter` 插件共同消费。
-- 各适配器的 `fabric.mod.json` 与 mixin 配置由 `generateAdapterResources` 从矩阵生成，不入库——七份手写副本只会互相漂移。
+- 各适配器的 `fabric.mod.json` 与 mixin 配置由 `generateAdapterResources` 从矩阵生成，不入库——八份手写副本只会互相漂移。
 - 校验任务：
   - `checkArchitecture`：扫描 core 的 class 常量池，禁止出现 `net/minecraft/` 与 `com/mojang/`（白名单 `net/fabricmc/api/`、`net/fabricmc/loader/api/`）。
   - `validateAdapterMatrix`：矩阵 ↔ 磁盘目录一致性 + 模拟 Loader 选择。
-  - `verifyUniversalJar`：嵌套 jar 数量、`depends` 完整性、每个适配器恰好声明 2 个 mixin 且对应 class 存在，并排除旧转换库及其打包依赖。`build` 同时安排 `universal` 和此校验；单独调用时只检查当前产物，不重新打包。
-- `universal`：core jar + 7 个嵌套适配器 → `build/libs/ViaResourcePack-<version>.jar`。
+  - `verifyUniversalJar`：嵌套 jar 数量、`depends` 完整性、每个适配器恰好声明矩阵对应的 3 个 mixin 且对应 class 存在，并排除旧转换库及其打包依赖。`build` 同时安排 `universal` 和此校验；单独调用时只检查当前产物，不重新打包。
+- `universal`：core jar + 8 个嵌套适配器 → `build/libs/ViaResourcePack-<version>.jar`。
 
-不依赖 Fabric API：只用 fabric-loader（`FabricLoader.getGameDir()` + `ClientModInitializer`）、minecraft 与 mixin。
+转换与缓存不依赖 Fabric API：只用 fabric-loader（`FabricLoader.getGameDir()` + `ClientModInitializer`）、minecraft 与 mixin。中英旧包提示是随 JAR 分发的语言资源；安装与客户端匹配的 Fabric API 资源加载模块时才进入原版语言栈，只有 Loader 时继续显示原版文字。
 
 ### 5.1 客户端验收范围
 
-- **1.14.4 / Java 8 / Fabric Loader 0.19.5**：实际运行确认已启用的旧图集目录、格式 3 ZIP 升到 4；第二次运行复用缓存，资源重载仍生成图集。未启用的旧纹理目录和 ZIP 仅占位，未知目录未占位。这组成功样本是启动时已启用；另一次从原版菜单首次启用的隔离验证在调试附加阶段中止，未验证到菜单确认。
+- **1.14.4 / Java 8 / Fabric Loader 0.19.5**：实际运行确认已启用的旧图集目录、格式 3 ZIP 升到 4；第二次运行复用缓存，资源重载仍生成图集。未启用的旧纹理目录和 ZIP 仅占位，未知目录未占位。并行调度制品另通过原版菜单首次启用旧图集包：保存原 ID，原版进度屏持续绘制且不暂停，重载成功后回到同一个设置界面，生效的泥土图集像素与转换夹具一致。
 - **1.16 / Java 8**：原版从转换后的 ZIP 读取格式 3→5 的床岩贴图；启动和手动重载均保留原选包 ID。
 - **1.19.3 / Java 17**：格式 3→12 的 ZIP 以原选包 ID 重载，原版实际读取缓存中的石头贴图。
 - **1.20.2 / Java 17**：格式 15 的目录和 ZIP 升到 18，原版仍用原选包 ID，并读到了新版勾选精灵。
 - **1.20.3 / Java 17 / Fabric Loader 0.19.5**：在本地协议夹具的 CONFIGURATION 阶段推送服务器包，原版下载一次并从 ViaResourcePack 缓存加载格式 3→22 的 ZIP。换 JVM 与 URL 后，相同 UUID 和 SHA-1 命中原版下载缓存、没有 HTTP 请求；原版仍从同一转换 ZIP 重载，两次均回报 `SUCCESSFULLY_LOADED`。冻结制品规则版本为 `builtin-19`，此用例没有测试 PLAY 阶段。
 - **1.20.5 / Java 21 / Fabric Loader 0.19.5**：实际选中 1.20.5 适配器，格式 15 ZIP 与格式 22 目录升到 32，原版用原选包 ID 完成资源重载。未选中的旧 ZIP 没有产生缓存；格式 104 保持原样。本次只实测了本地包。
 - **26.3 / Java 25 / Fabric Loader 0.19.5**：实际运行确认本地目录、ZIP 以原 ID 重载；格式 104 不降级。离线单人世界的格式 46 捆绑 ZIP 升到 97.1；JFR 确认原版分别从实际转换 ZIP 中读取元数据与 `sounds.json`，随后成功进入世界。另以 `builtin-28` 制品验证格式 52 双层出生蛋：手动重载无回滚，原版两张图集精灵的 16×16 ARGB 与源图一致，烘焙的猪出生蛋使用这两张精灵及各自的旧染色；格式 104 对照包仍从原 ZIP 读取。
+- **26.3 菜单并行准备**：从原版菜单提交一个旧 ZIP、一个旧目录和一个超出解包条目预算的旧 ZIP。两个成功项的后台工作重叠，准备未完时原版进度屏持续绘制；失败项保留原路径并显示包名。原版手动重载正常完成、未回滚，三项的资源层顺序不变；成功项刷新为兼容，Esc 返回同一个设置界面。
+- **26.3 缓存显示与语言层**：使用 Fabric API 0.166.2+26.3 验证中英文旧包提示来自模组，新包提示、标题和按钮仍为原版。未选中的旧 ZIP 和目录无缓存时保持旧版警告；命中时以原 ID 标为兼容；用相同大小和修改时间替换源内容后不再命中。格式 104 始终过新且保持原路径。
 - **1.14.4 服务器包**：同一隔离游戏目录用两个独立 JVM 连接本地协议夹具。首次下载格式 3 的 ZIP，原版打开升为 4 的缓存；第二次改用不同 URL、声明相同内容 SHA-1，无 HTTP 请求且原版打开同一 ZIP。两次均回报 `SUCCESSFULLY_LOADED`。
-- 上述隔离实例均使用 Fabric Loader 0.19.5，七个适配器族各有至少一个实际运行样本；族内没有逐个运行每个版本。服务器包验证只涉及本地夹具，不代表已覆盖第三方服务器及插件；也不代表已验证所有素材的视觉等价或其他模组组合。
+- 上述隔离实例均使用 Fabric Loader 0.19.5，调度改造前的七个适配器族各有至少一个实际运行样本；族内没有逐个运行每个版本。服务器包验证只涉及本地夹具，不代表已覆盖第三方服务器及插件；也不代表已验证所有素材的视觉等价或其他模组组合。
 
 ---
 
 ## 6. 已知限制
 
-- 首次升级同步阻塞资源重载；后续可复用缓存。26.1–26.3 原版 `Options.loadSelectedResourcePacks` 遇到已经兼容但仍有旧不兼容标记的包时，会移除标记并跳过该轮选择；重新启用或保存配置后重启即可。模组不改写原版选包配置。
+- 从选包菜单触发的升级在后台准备；启动、F3+T 和旧服务器回调仍可能同步等待。后续可复用缓存。26.1–26.3 原版 `Options.loadSelectedResourcePacks` 遇到已经兼容但仍有旧不兼容标记的包时，会移除标记并跳过该轮选择；重新启用或保存配置后重启即可。模组不改写原版选包配置。
 - 内置包和数据包不在处理范围内。
 - 部分旧资源没有现代等价物；扩展格式、被移除内容或缺乏可验证映射的素材需要人工处理。

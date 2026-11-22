@@ -17,7 +17,12 @@
  */
 package top.syshub.viarp.cache;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
@@ -31,6 +36,8 @@ import java.util.zip.ZipFile;
 import top.syshub.viarp.ViaRpLog;
 import top.syshub.viarp.io.PathIo;
 import top.syshub.viarp.pack.PackFormat;
+import top.syshub.viarp.pack.PackFormatRange;
+import top.syshub.viarp.pack.PackMetadata;
 
 /**
  * 转换产物缓存目录。
@@ -49,6 +56,7 @@ public final class ConversionCache {
 
     private static final String ZIP_PAYLOAD = "pack.zip";
     private static final String DIR_PAYLOAD = "pack";
+    private static final int MAX_PACK_METADATA_BYTES = 4 * 1024 * 1024;
 
     private final Path cacheDir;
     private final long maxBytes;
@@ -79,6 +87,34 @@ public final class ConversionCache {
             return null;
         }
         return lookup(cacheKey, zip);
+    }
+
+    /** 浏览时先排除不可能命中的包；这里只过滤，绝不以名称或文件长度确认命中。 */
+    public boolean hasCandidate(boolean zip, long sourceSize, PackFormat target, String rulesVersion) throws IOException {
+        if (!Files.isDirectory(cacheDir, LinkOption.NOFOLLOW_LINKS)) {
+            return false;
+        }
+        String namespace = CacheKey.namespace(zip, target, rulesVersion);
+        try (DirectoryStream<Path> entries = Files.newDirectoryStream(cacheDir, "v2-*-" + namespace)) {
+            for (Path dir : entries) {
+                String key = dir.getFileName().toString();
+                if (CacheKey.parse(key) == null || !Files.isDirectory(dir, LinkOption.NOFOLLOW_LINKS)) {
+                    continue;
+                }
+                try {
+                    if (!isDirectChild(cacheDir, dir)) {
+                        continue;
+                    }
+                    CacheEntryMeta meta = CacheEntryMeta.read(dir);
+                    if (key.equals(meta.entryKey()) && (!zip || meta.sourceSize == sourceSize || meta.sourceSize < 0)) {
+                        return true;
+                    }
+                } catch (IOException ignored) {
+                    // 记录尚未发布、正被删除或损坏时，继续查其他候选。
+                }
+            }
+        }
+        return false;
     }
 
     /** 缓存里可用的产物路径；键、元数据或产物形态不匹配则返回 {@code null}。 */
@@ -112,19 +148,49 @@ public final class ConversionCache {
         return null;
     }
 
-    /** 拦住截断 ZIP 和失去根声明的产物；不重新计算所有资源的摘要。 */
+    /** 确认原版会看到正确目标声明；不在浏览期间重新计算产物所有资源的摘要。 */
     private static boolean hasPackMetadata(Path payload, CacheEntryMeta meta) throws IOException {
+        PackFormat target = PackFormat.of(meta.toMajor, meta.toMinor);
         if (!meta.zip) {
             Path metadata = payload.resolve("pack.mcmeta");
-            return Files.isRegularFile(metadata, LinkOption.NOFOLLOW_LINKS) && Files.size(metadata) > 0;
+            if (!Files.isRegularFile(metadata, LinkOption.NOFOLLOW_LINKS) || !metadataSizeValid(Files.size(metadata))) {
+                return false;
+            }
+            try (InputStream in = Files.newInputStream(metadata)) {
+                return declaresTarget(in, target);
+            }
         }
         if (meta.payloadSize <= 0 || Files.size(payload) != meta.payloadSize) {
             return false;
         }
         try (ZipFile archive = new ZipFile(payload.toFile())) {
             ZipEntry metadata = archive.getEntry("pack.mcmeta");
-            return metadata != null && !metadata.isDirectory() && metadata.getSize() > 0;
+            if (metadata == null || metadata.isDirectory() || !metadataSizeValid(metadata.getSize())) {
+                return false;
+            }
+            try (InputStream in = archive.getInputStream(metadata)) {
+                return declaresTarget(in, target);
+            }
         }
+    }
+
+    private static boolean metadataSizeValid(long size) {
+        return size > 0 && size <= MAX_PACK_METADATA_BYTES;
+    }
+
+    private static boolean declaresTarget(InputStream in, PackFormat target) throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        byte[] buffer = new byte[4096];
+        for (int n; (n = in.read(buffer)) != -1;) {
+            if (n > MAX_PACK_METADATA_BYTES - bytes.size()) {
+                return false;
+            }
+            bytes.write(buffer, 0, n);
+        }
+        String text = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes.toByteArray())).toString();
+        PackMetadata metadata = PackMetadata.parse(text);
+        PackFormatRange range = metadata.supportedFormats();
+        return target.equals(range.min()) && target.equals(range.max()) && metadata.supports(target);
     }
 
     /** 目标产物应该写到的位置（zip 或目录）。 */

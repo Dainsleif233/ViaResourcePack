@@ -57,11 +57,17 @@ public class DownloadedPackSourceMixin {
         if (requested == null || requested.isEmpty()) {
             return requested;
         }
+        List<Path> originals = new ArrayList<>(requested.size());
+        for (PackReloadConfig.IdAndPath entry : requested) {
+            originals.add(entry.path());
+        }
+        List<Path> resolvedPaths = ViaRpHooks.serverPacks(originals);
         List<PackReloadConfig.IdAndPath> converted = new ArrayList<>(requested.size());
         boolean changed = false;
-        for (PackReloadConfig.IdAndPath entry : requested) {
+        for (int i = 0; i < requested.size(); i++) {
+            PackReloadConfig.IdAndPath entry = requested.get(i);
             Path source = entry.path();
-            Path resolved = ViaRpHooks.serverPack(source);
+            Path resolved = resolvedPaths.get(i);
             if (resolved == null || resolved.equals(source)) {
                 converted.add(entry);
             } else {

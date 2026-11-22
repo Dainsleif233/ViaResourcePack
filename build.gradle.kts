@@ -247,10 +247,10 @@ val verifyUniversalJar = tasks.register("verifyUniversalJar") {
                         val declared = mixins.getAsJsonArray("client")?.map { it.asString }
                             ?: error("Mixin config $configName in '$path' has no 'client' list")
                         require(
-                            declared.size == 2 && declared.toSet() == adapter.mixins.toSet() &&
+                            declared.size == adapter.mixins.size && declared.toSet() == adapter.mixins.toSet() &&
                                 listOf("mixins", "server").all { (mixins.getAsJsonArray(it)?.size() ?: 0) == 0 }
                         ) {
-                            "Adapter '$path' should declare only the two expected client mixins: ${adapter.mixins}"
+                            "Adapter '$path' should declare only the expected client mixins: ${adapter.mixins}"
                         }
                         declared.forEach { mixin ->
                             val classPath = "$pkg/${mixin.replace('.', '/')}.class"
@@ -373,6 +373,12 @@ val validateAdapterMatrix = tasks.register("validateAdapterMatrix") {
 
             val server = rootDir.resolve("${adapter.serverHookDir}/src/main/java")
             if (!server.isDirectory) fail("MC ${adapter.version}: missing server hook sources ${server.path}")
+
+            val reload = rootDir.resolve("${adapter.reloadHookDir}/src/main/java")
+            if (!reload.isDirectory) fail("MC ${adapter.version}: missing reload hook sources ${reload.path}")
+
+            val reloadUi = rootDir.resolve("${adapter.reloadUiDir}/src/main/java")
+            if (!reloadUi.isDirectory) fail("MC ${adapter.version}: missing progress UI sources ${reloadUi.path}")
         }
 
         val duplicates = matrix.mc.groupingBy { it.version }.eachCount().filter { it.value > 1 }

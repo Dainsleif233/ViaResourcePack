@@ -28,18 +28,18 @@ fabric-loader + minecraft + mixin）。
 |-----------------------------------|-------------------------------------------------------------------------------------|
 | `./gradlew build`                 | core + 全部适配器 + universal jar                                          |
 | `./gradlew universal`             | 只打包 universal jar                                                                |
-| `./gradlew verifyUniversalJar`    | 校验 universal 嵌套结构（7 个嵌套 jar、fabric.mod.json、每个适配器恰好 2 个 mixin） |
+| `./gradlew verifyUniversalJar`    | 校验 universal 嵌套结构（8 个嵌套 jar、fabric.mod.json、每个适配器恰好 3 个 mixin） |
 | `./gradlew checkArchitecture`     | 扫描 core 常量池，禁止 `net/minecraft/`、`com/mojang/` 引用                         |
 | `./gradlew validateAdapterMatrix` | `adapters.toml` ↔ 磁盘一致性 + 模拟 Loader 选适配器                                 |
 | `./gradlew test`                 | core 单元测试 |
 
-产物：`build/libs/ViaResourcePack-<version>.jar`（交付物，core + 7 个嵌套 jar）与
+产物：`build/libs/ViaResourcePack-<version>.jar`（交付物，core + 8 个嵌套 jar）与
 `build/libs/ViaResourcePack-core-<version>.jar`（core 本体，调试用）。
 
 ## 仓库结构
 
 ```
-src/main/java/top/syshub/viarp/   core：跨 7 个版本族共用的 Java 8 字节码（不引 net.minecraft）
+src/main/java/top/syshub/viarp/   core：跨 8 个版本族共用的 Java 8 字节码（不引 net.minecraft）
   cache/   内容缓存（ConversionCache、CacheEntryMeta）
   convert/ 调度（ConversionService）、PackFormatHistory 与内置迁移规则
            （PackPlaceholder 占位包、ServerPackShortcut 服务器包去重）
@@ -50,9 +50,11 @@ src/main/java/top/syshub/viarp/   core：跨 7 个版本族共用的 Java 8 字�
 adapters/
   mc/<版本>/       每个版本族的适配器子项目：一个 build.gradle.kts（apply loom + viarp.mc.adapter）
                    + 一张 fabric.mod.json/mixin 配置（由插件生成，不入库）
-  shared/common/   ViaRpHooks —— mixin 与 core 之间的唯一桥（静态方法）
+  shared/common/   ViaRpHooks 路径桥与 LocalPackReload 菜单生命周期桥
   shared/local/<hook>/   本地资源包拦截 mixin
   shared/server/<hook>/  服务器资源包拦截 mixin（1.14.4–1.20.2 族的下载去重注入也在这）
+  shared/reloadHook/<hook>/  选包确认后发起重载的 mixin
+  shared/reloadUi/<bridge>/  原版进度界面桥
 gradle/
   adapters.toml    版本矩阵单一数据源（[[mc]] 表）
   libs.versions.toml  依赖版本目录
@@ -69,12 +71,10 @@ refer/             gitignore 的参考资料（原版资源包加载调用链）
 2. **core 必须产出 Java 8 字节码**：用 `-source 8 -target 8`，**不是** `--release 8`
    （后者限制平台 API，引用 MC 里的 record 时会报「找不到 java.lang.Record」）。
    写法上也保持 Java 8：不用 `var`、文本块、switch 表达式等新语法。
-3. **拦截策略 = 替换路径**：mixin 只改原版拿到的 File/Path/List<IdAndPath> 参数，**绝不**
-   包装 `PackResources` / `Pack`（与加速解压类 mod 的兼容性前提）。mixin 里只允许对
-   `ViaRpHooks` 的静态调用，不直接引用其他 core 类。
-4. **每个适配器恰好 2 个 mixin**（local + server，`verifyUniversalJar` 用
-   `declared.size() == 2` 断言）。要新增注入点就放进已有的 mixin 类，不要加第三个 mixin 类。
-5. **mixin 源码只放在 `adapters/shared/{common,local/<hook>,server/<hook>}`**，不在
+3. **保持原版读取器**：发现与下载 hook 只替换 File/Path/List<IdAndPath>，不包装
+   `PackResources` / `Pack`。菜单 hook 只把保存后的重载交给后台准备桥，不拦截全局重载入口。
+4. **每个适配器恰好 3 个 mixin**（本地路径、服务器路径和选包确认），验包检查矩阵声明的精确类集合。
+5. **mixin 源码只放在 `adapters/shared/{common,local/<hook>,server/<hook>,reloadHook/<hook>,reloadUi/<bridge>}`**，不在
    `adapters/mc/` 下复制；`fabric.mod.json` 与 `viarp-adapter-mc.mixins.json` 由
    `generateAdapterResources` 按矩阵生成，不要手写。
 6. **版本矩阵单一数据源 `gradle/adapters.toml`**：`settings.gradle.kts` 的 include 列表和
@@ -89,9 +89,9 @@ refer/             gitignore 的参考资料（原版资源包加载调用链）
    （redirect `Pattern.matcher`、redirect `File.exists`、inject `checkHash`）。
    两个 `@Redirect` 的目标是 JDK 方法，与映射表无关；已确认全区间各恰好一次且顺序稳定，
    **不要加 `ordinal`**。1.20.3+ 的原版已按内容哈希缓存，不需要这套。
-10. **数据目录 `<gameDir>/config/viaresourcepack/`**：`work/` 与 `stubs/` 只在启动时清理一次
-    （`ViaRpPaths.prepare()`，由 `ViaRpClient` 调用）；运行期一律用 `ensureDirectories()`。
-    中途清空 `stubs/` 会删掉正被原版持有的占位包。
+10. **缓存与临时目录**：默认 `cache/`、`work/`、`stubs/` 都在 `resourcepacks/.viaresourcepack/`，
+    不写根 `pack.mcmeta`；`config/viaresourcepack/` 只写配置。临时目录只在 `ViaRpPaths.prepare()` 清理一次，
+    运行期不清，保护原版仍持有的占位包。
 11. **不引入新依赖**：core 只用 JDK；适配器编译期可见 core，运行期只依赖
     fabric-loader / minecraft / mixin / mixinextras。不要给 core 加 slf4j 等硬依赖
     （1.14.4–1.16.5 运行时没有 slf4j-api，`ViaRpLog` 是反射门面）。
@@ -101,7 +101,7 @@ refer/             gitignore 的参考资料（原版资源包加载调用链）
 
 ### 新增 / 调整版本族
 1. `gradle/adapters.toml` 加一条 `[[mc]]`（`version`/`covers`/`obfuscated`/`java`/
-   `localHook`/`serverHook`）。
+   `localHook`/`serverHook`/`reloadHook`/`reloadUi`）。
 2. 建 `adapters/mc/<version>/build.gradle.kts`，内容照抄现有族（apply 对应的 Loom 插件 +
    `viarp.mc.adapter`；`obfuscated = false` 的族用普通 `fabric-loom`）。
 3. 拦截点签名在新区间内变化时，新建 `adapters/shared/local/<新hook>` 或
@@ -121,7 +121,7 @@ refer/             gitignore 的参考资料（原版资源包加载调用链）
 `remapJar` 会重写成 intermediary 名，可用 `javap` 反编译适配器产物验证 `method_*` 值。
 
 ### 加单元测试
-- core 测试在 `src/test/java/top/syshub/viarp/`（JUnit 5 + AssertJ），针对 `PackMetadata` /
+- core 测试在 `src/test/java/top/syshub/viarp/`（JUnit Jupiter + AssertJ），针对 `PackMetadata` /
   `PackSelection` / 缓存键这类不依赖 MC 的逻辑。
 - 注意 `ViaRpPaths.get()` 会调 `FabricLoader.getInstance()`，单测里不要触发它；
   设计上与路径有关的逻辑尽量做成可注入（如把 Path 传进构造函数）。

@@ -28,13 +28,13 @@ repositories {
     maven("https://maven.aliyun.com/repository/public/")
 }
 
-// 各适配器共享同一份 mixin 源码：拦截点的方法名与描述符里不含任何 net.minecraft
-// 类型（见 docs/DESIGN.md §1），所以同一份源码能同时编译到混淆与非混淆版本。
-// 具体挂哪几份由 adapters.toml 的 localHook / serverHook 决定。
+// 版本矩阵选择两个路径接点、一个原版菜单重载接点，以及相应屏幕桥。
 val sharedRoots = listOf(
     rootDir.resolve("adapters/shared/common/src/main/java"),
     rootDir.resolve("${adapter.localHookDir}/src/main/java"),
-    rootDir.resolve("${adapter.serverHookDir}/src/main/java")
+    rootDir.resolve("${adapter.serverHookDir}/src/main/java"),
+    rootDir.resolve("${adapter.reloadHookDir}/src/main/java"),
+    rootDir.resolve("${adapter.reloadUiDir}/src/main/java")
 )
 sharedRoots.forEach { root ->
     require(root.isDirectory) { "${project.path}: shared mixin source root missing: $root" }
@@ -70,7 +70,7 @@ dependencies {
 }
 
 // fabric.mod.json 与 mixin 配置都由矩阵生成——内容完全由 adapters.toml 决定，
-// checked-in 七份副本只会互相漂移。
+// 手写多份副本只会互相漂移。
 val generatedResources = layout.buildDirectory.dir("generated/resources")
 
 val generateAdapterResources = tasks.register("generateAdapterResources") {

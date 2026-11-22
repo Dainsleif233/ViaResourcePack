@@ -16,8 +16,8 @@
 ##     且 `officialMojangMappings()` 不可用。
 ##   - `java` 是该族编译目标与 mixin compatibilityLevel 的 Java 版本，取该 MC 区间的
 ##     最低 JRE 要求。
-##   - `localHook` / `serverHook` 与 `adapters/shared/<local|server>/<hook>/` 目录一一对应；
-##     各族的拦截点差异见 `docs/DESIGN.md` §1。
+##   - localHook / serverHook / reloadHook / reloadUi 各自对应 adapters/shared/ 下的源码目录。
+##     各族的拦截点差异见 docs/DESIGN.md §1。
 ##
 ## 本项目不依赖 Fabric API：只用 fabric-loader + minecraft + mixin。
 ##
@@ -31,6 +31,8 @@ obfuscated = true
 java = 8
 localHook = "createSupplier"
 serverHook = "setServerPack"
+reloadHook = "selectScreen"
+reloadUi = "legacy"
 
 [[mc]]
 version = "1.16"
@@ -39,14 +41,28 @@ obfuscated = true
 java = 8
 localHook = "createSupplier"
 serverHook = "setServerPack"
+reloadHook = "optionsScreen"
+reloadUi = "legacy"
 
 [[mc]]
 version = "1.19.3"
-covers = "1.19.3 - 1.20.1"
+covers = "1.19.3"
 obfuscated = true
 java = 17
 localHook = "folderDetector"
 serverHook = "setServerPackDownloaded"
+reloadHook = "optionsScreen"
+reloadUi = "obfuscated"
+
+[[mc]]
+version = "1.19.4"
+covers = "1.19.4 - 1.20.1"
+obfuscated = true
+java = 17
+localHook = "folderDetector"
+serverHook = "setServerPackDownloaded"
+reloadHook = "options"
+reloadUi = "obfuscated"
 
 [[mc]]
 version = "1.20.2"
@@ -55,6 +71,8 @@ obfuscated = true
 java = 17
 localHook = "packDetector"
 serverHook = "setServerPackDownloaded"
+reloadHook = "options"
+reloadUi = "obfuscated"
 
 [[mc]]
 version = "1.20.3"
@@ -63,6 +81,8 @@ obfuscated = true
 java = 17
 localHook = "packDetector"
 serverHook = "loadRequestedPacks"
+reloadHook = "options"
+reloadUi = "obfuscated"
 
 [[mc]]
 version = "1.20.5"
@@ -71,6 +91,8 @@ obfuscated = true
 java = 21
 localHook = "packDetector"
 serverHook = "loadRequestedPacks"
+reloadHook = "options"
+reloadUi = "obfuscated"
 
 [[mc]]
 version = "26.1"
@@ -79,3 +101,5 @@ obfuscated = false
 java = 25
 localHook = "packDetector"
 serverHook = "loadRequestedPacks"
+reloadHook = "options"
+reloadUi = "unobfuscated"

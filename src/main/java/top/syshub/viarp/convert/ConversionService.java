@@ -19,12 +19,25 @@ package top.syshub.viarp.convert;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 import java.util.zip.ZipException;
 
 import top.syshub.viarp.ViaRpConfig;
@@ -44,15 +57,28 @@ import top.syshub.viarp.pack.PackSelection;
  *
  * <p>各版本适配器的 mixin 只做一件事——把拿到的资源包路径交给
  * {@link #resolve(Path, PackKind)}，然后用返回的路径替换原参数。是否需要转换、
- * 缓存命中、失败降级全在这里决定，因此七个适配器族共享同一套行为。
+ * 缓存命中、失败降级全在这里决定，因此所有适配器共用同一套行为。
  *
- * <p>线程安全：{@code resolve} 会被资源重载线程与主线程调用。转换本身用
- * {@code synchronized} 串行化——同时转换两个大包只会互相抢 IO，没有收益，
- * 而串行让缓存写入不需要额外的文件锁。
+ * <p>一批资源在有界工作池中处理；相同完整缓存键仅有一个发布者。
+ * 原版读取路径的回调仍在原来的线程，且按原请求顺序使用整批结果。
  */
 public final class ConversionService {
 
     private static final int MAX_LOGGED_WARNINGS = 8;
+    private static final int WORKERS = Math.max(1, Math.min(4, Math.min(
+            Runtime.getRuntime().availableProcessors() - 1,
+            (int) (Runtime.getRuntime().maxMemory() / (512L * 1024L * 1024L)))));
+    private static final AtomicInteger THREAD_IDS = new AtomicInteger();
+    private static final ThreadPoolExecutor WORK_POOL = new ThreadPoolExecutor(WORKERS, WORKERS,
+            30L, TimeUnit.SECONDS, new ArrayBlockingQueue<Runnable>(32), runnable -> {
+                Thread worker = new Thread(runnable, "ViaResourcePack-Worker-" + THREAD_IDS.incrementAndGet());
+                worker.setDaemon(true);
+                return worker;
+            });
+
+    static {
+        WORK_POOL.allowCoreThreadTimeOut(true);
+    }
 
     private static volatile ConversionService instance;
 
@@ -61,6 +87,8 @@ public final class ConversionService {
     private final ConversionCache cache;
     private final PackSelection selection;
     private final PackPlaceholder placeholder;
+    private final Map<String, CompletableFuture<Path>> inFlight = new ConcurrentHashMap<String, CompletableFuture<Path>>();
+    private final ThreadLocal<Map<Path, Path>> preparedLocal = new ThreadLocal<Map<Path, Path>>();
     private final Set<String> reportedSkips = new HashSet<String>();
 
     /** 本次运行已经报告过失败的源包，避免每次重载都刷同一条错误日志。 */
@@ -113,12 +141,90 @@ public final class ConversionService {
         if (source == null) {
             return null;
         }
+        return resolveForBatch(source, kind, null);
+    }
+
+    private Path resolveForBatch(Path source, PackKind kind, ConversionBatch.Entry progress) {
+        if (progress != null) {
+            progress.stage(ConversionBatch.Stage.CHECKING);
+        }
         try {
-            return resolveChecked(source, kind);
+            Path resolved = source == null ? null : resolveChecked(source, kind, progress);
+            if (progress != null && !progress.stage().finished()) {
+                progress.finish(resolved, ConversionBatch.Stage.UNCHANGED);
+            }
+            return resolved;
         } catch (IOException | RuntimeException e) {
-            // 拦截点在原版调用栈里，转换失败时回退原路径。
             reportFailureOnce(source, e);
+            if (progress != null) {
+                progress.finish(source, ConversionBatch.Stage.FAILED);
+            }
             return source;
+        }
+    }
+
+    /** 已下载的整组地址并行准备，结果保持服务器的原顺序。 */
+    public List<Path> resolveServerPacks(List<Path> sources) {
+        if (sources.isEmpty() || !config.enabled() || !config.convertServerPacks()) {
+            return sources;
+        }
+        return startBatch(sources, PackKind.SERVER).resolvedPaths();
+    }
+
+    /** 原版保存选项之后、实际资源重载之前，为本地包安排后台准备。 */
+    public ConversionBatch prepareLocalReload() {
+        Set<Path> sources = new LinkedHashSet<Path>();
+        if (config.enabled() && config.convertLocalPacks()) {
+            Path root = paths.resourcePacksDir();
+            if (config.onlyConvertEnabledPacks()) {
+                for (String id : selection.selectedIds()) {
+                    String name = id.startsWith("file/") ? id.substring(5) : id;
+                    if (name.isEmpty() || name.indexOf('/') >= 0 || name.indexOf((char) 92) >= 0
+                            || ".".equals(name) || "..".equals(name)) {
+                        continue;
+                    }
+                    try {
+                        Path child = root.resolve(name);
+                        if (paths.isInResourcePacksDir(child) && !paths.isOwnOutput(child)
+                                && Files.exists(child, LinkOption.NOFOLLOW_LINKS)) {
+                            sources.add(child);
+                        }
+                    } catch (InvalidPathException ignored) {
+                        // 损坏的选项 ID 不应使其他条目失去转换机会。
+                    }
+                }
+            } else if (Files.isDirectory(root)) {
+                try (DirectoryStream<Path> children = Files.newDirectoryStream(root)) {
+                    for (Path child : children) {
+                        if (!paths.isOwnOutput(child)) {
+                            sources.add(child);
+                        }
+                    }
+                } catch (IOException e) {
+                    ViaRpLog.warn("Could not enumerate local resource packs for conversion", e);
+                }
+            }
+        }
+        return startBatch(new ArrayList<Path>(sources), PackKind.LOCAL);
+    }
+
+    private ConversionBatch startBatch(List<Path> sources, PackKind kind) {
+        return ConversionBatch.start(sources, WORK_POOL, WORKERS,
+                (source, entry) -> resolveForBatch(source, kind, entry));
+    }
+
+    /** 仅在原版同步发现资源包的调用栈中使用已准备路径；失败项也不在主线程重试。 */
+    public <T> T withPreparedLocalPacks(ConversionBatch batch, Supplier<T> reload) {
+        Map<Path, Path> previous = preparedLocal.get();
+        preparedLocal.set(batch.resolvedMap());
+        try {
+            return reload.get();
+        } finally {
+            if (previous == null) {
+                preparedLocal.remove();
+            } else {
+                preparedLocal.set(previous);
+            }
         }
     }
 
@@ -141,14 +247,31 @@ public final class ConversionService {
             return source;
         }
         try {
-            if (isEnabled(source)) {
-                return resolveChecked(source, PackKind.LOCAL);
+            Map<Path, Path> batch = preparedLocal.get();
+            if (batch != null) {
+                Path preparedPath = batch.get(source.toAbsolutePath().normalize());
+                if (preparedPath != null) {
+                    return preparedPath;
+                }
+            } else if (isEnabled(source)) {
+                return resolveChecked(source, PackKind.LOCAL, null);
             }
-            // 无 pack.mcmeta 的旧纹理包必须先能出现在界面，玩家才有机会启用它。
             PackFormat target = GameVersion.current().packFormat();
             PackInput pack = inspect(source);
-            return pack != null && pack.isLegacyTexturePack() && ResourcePackUpgrader.canUpgrade(pack.format(), target)
-                    ? placeholder.create(source, target) : source;
+            if (pack == null || !pack.canUpgradeTo(target) || !ResourcePackUpgrader.canUpgrade(pack.format(), target)) {
+                return source;
+            }
+            // 只复用已有产物，不在浏览时启动转换。原版用同一份产物决定兼容性并保留原条目 ID。
+            boolean zip = Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS);
+            if (cache.hasCandidate(zip, zip ? Files.size(source) : -1L, target, ResourcePackUpgrader.RULES_VERSION)) {
+                prepareOnce();
+                Path cached = cache.lookup(PathIo.sha1(source), zip, target, ResourcePackUpgrader.RULES_VERSION);
+                if (cached != null) {
+                    return cached;
+                }
+            }
+            // 没有缓存的旧纹理包仍用占位通过原版发现，等玩家启用才转换。
+            return pack.isLegacyTexturePack() ? placeholder.create(source, target) : source;
         } catch (IOException | RuntimeException e) {
             reportFailureOnce(source, e);
             return source;
@@ -191,7 +314,6 @@ public final class ConversionService {
         if (selection.isEnabled(name.toString())) {
             return true;
         }
-        ViaRpLog.debug("Not converting {} yet: it is not enabled in options.txt", name);
         return false;
     }
 
@@ -204,7 +326,7 @@ public final class ConversionService {
         return resolved == null ? source : resolved.toFile();
     }
 
-    private Path resolveChecked(Path source, PackKind kind) throws IOException {
+    private Path resolveChecked(Path source, PackKind kind, ConversionBatch.Entry progress) throws IOException {
         if (!config.enabled()) {
             return source;
         }
@@ -236,7 +358,7 @@ public final class ConversionService {
             return source;
         }
         boolean isZip = Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS);
-        return convertCached(source, isZip, pack, target, kind);
+        return convertCached(source, isZip, pack, target, kind, progress);
     }
 
     private static PackInput inspect(Path source) throws IOException {
@@ -281,19 +403,59 @@ public final class ConversionService {
         }
     }
 
-    private synchronized Path convertCached(Path source, boolean zip, PackInput pack, PackFormat target,
-                                            PackKind kind) throws IOException {
+    private Path convertCached(Path source, boolean zip, PackInput pack, PackFormat target, PackKind kind,
+                               ConversionBatch.Entry progress) throws IOException {
         prepareOnce();
         // 即使路径、大小和 mtime 相同，内容也可能被启动器或同步工具覆盖。
         String sha1 = PathIo.sha1(source);
         String key = ConversionCache.cacheKey(sha1, zip, target, ResourcePackUpgrader.RULES_VERSION);
         Path payload = cache.lookup(key, zip);
-        return payload != null ? payload
-                : convert(source, zip, pack, target, key, sha1, PathIo.sizeOrMinusOne(source), kind);
+        if (payload != null) {
+            return finish(progress, payload, ConversionBatch.Stage.CACHED);
+        }
+        CompletableFuture<Path> pending = new CompletableFuture<Path>();
+        CompletableFuture<Path> other = inFlight.putIfAbsent(key, pending);
+        if (other != null) {
+            try {
+                return finish(progress, other.join(), ConversionBatch.Stage.CACHED);
+            } catch (CompletionException e) {
+                Throwable failure = e.getCause();
+                if (failure instanceof Error) {
+                    throw (Error) failure;
+                }
+                throw new IOException("Equivalent resource pack conversion failed", failure);
+            }
+        }
+        try {
+            // 上次发布可能恰好在首次查缓存与取得写权限之间完成。
+            payload = cache.lookup(key, zip);
+            if (payload != null) {
+                pending.complete(payload);
+                return finish(progress, payload, ConversionBatch.Stage.CACHED);
+            }
+            payload = convert(source, zip, pack, target, key, sha1, PathIo.sizeOrMinusOne(source), kind, progress);
+            pending.complete(payload);
+            return finish(progress, payload, ConversionBatch.Stage.CONVERTED);
+        } catch (IOException | RuntimeException | Error failure) {
+            pending.completeExceptionally(failure);
+            throw failure;
+        } finally {
+            inFlight.remove(key, pending);
+        }
+    }
+
+    private static Path finish(ConversionBatch.Entry entry, Path result, ConversionBatch.Stage stage) {
+        if (entry != null) {
+            entry.finish(result, stage);
+        }
+        return result;
     }
 
     private Path convert(Path source, boolean zip, PackInput pack, PackFormat target, String key,
-                         String sha1, long size, PackKind kind) throws IOException {
+                         String sha1, long size, PackKind kind, ConversionBatch.Entry progress) throws IOException {
+        if (progress != null) {
+            progress.stage(ConversionBatch.Stage.READING);
+        }
         Path work = Files.createTempDirectory(paths.workDir(), "job-");
         Path unpacked = work.resolve("pack");
         PackFormat from = pack.format();
@@ -313,7 +475,13 @@ public final class ConversionService {
             if (!from.equals(snapshot.format()) || !snapshot.canUpgradeTo(target)) {
                 throw new IOException("Resource pack changed while preparing the upgrade");
             }
+            if (progress != null) {
+                progress.stage(ConversionBatch.Stage.MIGRATING);
+            }
             List<String> warnings = ResourcePackUpgrader.upgrade(unpacked, snapshot, target, config.verbose());
+            if (progress != null) {
+                progress.stage(ConversionBatch.Stage.SAVING);
+            }
             Path destination = cache.payloadPath(key, zip);
             if (zip) {
                 Path packed = work.resolve("packed.zip");

@@ -19,6 +19,7 @@ package top.syshub.viarp.adapter;
 
 import java.io.File;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -83,6 +84,16 @@ public final class ViaRpHooks {
         } catch (Throwable failure) {
             logAndIgnore(source, failure);
             return source;
+        }
+    }
+
+    /** 原版已经下载到本地的资源包列表；转换不改变其顺序。 */
+    public static List<Path> serverPacks(List<Path> sources) {
+        try {
+            return ConversionService.get().resolveServerPacks(sources);
+        } catch (Throwable failure) {
+            ViaRpLog.error("Could not prepare the downloaded resource pack batch; using original paths", failure);
+            return sources;
         }
     }
 
