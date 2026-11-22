@@ -21,7 +21,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 import top.syshub.viarp.ViaRpLog;
 import top.syshub.viarp.pack.PackFormat;
@@ -31,7 +35,7 @@ import top.syshub.viarp.pack.PackMetadata;
 final class ResourcePackUpgrader {
 
     // 产物、源视图或缓存内诊断有变化时递增；不得重用旧规则的结果。
-    static final String RULES_VERSION = "builtin-22";
+    static final String RULES_VERSION = "builtin-23";
 
     private ResourcePackUpgrader() {
     }
@@ -91,16 +95,78 @@ final class ResourcePackUpgrader {
         if (active.isEmpty()) {
             return;
         }
-        List<String> files = pack.files();
-        for (String overlay : active) {
-            String prefix = overlay + "/";
-            for (String file : files) {
-                if (file.startsWith(prefix + "assets/")) {
-                    Path destination = pack.path(file.substring(prefix.length()));
-                    Files.createDirectories(destination.getParent());
-                    Files.copy(pack.path(file), destination, StandardCopyOption.REPLACE_EXISTING);
-                }
+        Map<String, Integer> order = new HashMap<String, Integer>();
+        Map<String, String> names = new HashMap<String, String>();
+        for (int i = 0; i < active.size(); i++) {
+            String name = active.get(i);
+            requireSamePath(names, name, name);
+            order.put(name, i);
+        }
+
+        // 只扫描一次工作树；同路径的精确覆盖只复制声明顺序上的最终赢家。
+        List<String> entries = pack.entries(true);
+        Map<String, String> sources = new LinkedHashMap<String, String>();
+        for (String entry : entries) {
+            int separator = entry.indexOf('/');
+            if (separator < 0 || entry.endsWith("/")) {
+                continue;
+            }
+            String layer = entry.substring(0, separator);
+            String declared = names.get(layer.toLowerCase(Locale.ROOT));
+            String destination = entry.substring(separator + 1);
+            if (declared == null || !isAssetsPath(destination)) {
+                continue;
+            }
+            if (!layer.equals(declared) || !destination.startsWith("assets/")) {
+                throw new IOException("Ambiguous overlay asset path collision: " + declared + " vs " + entry);
+            }
+            String previous = sources.get(destination);
+            if (previous == null || order.get(layer) > order.get(previous.substring(0, previous.indexOf('/')))) {
+                sources.put(destination, entry);
             }
         }
+        if (sources.isEmpty()) {
+            return;
+        }
+
+        // 不把不同大小写或文件/目录重名误当原版的精确覆盖。任何碰撞都在第一次复制前失败。
+        Map<String, String> layout = new HashMap<String, String>();
+        for (String entry : entries) {
+            if (isAssetsPath(entry)) {
+                registerPath(layout, entry);
+            }
+        }
+        for (String destination : sources.keySet()) {
+            String part = destination;
+            while (registerPath(layout, part)) {
+                int last = part.lastIndexOf('/', part.length() - 2);
+                if (last < 0) {
+                    break;
+                }
+                part = part.substring(0, last + 1);
+            }
+        }
+        for (Map.Entry<String, String> source : sources.entrySet()) {
+            Path destination = pack.path(source.getKey());
+            Files.createDirectories(destination.getParent());
+            Files.copy(pack.path(source.getValue()), destination, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    private static boolean isAssetsPath(String path) {
+        return "assets".equalsIgnoreCase(path) || path.regionMatches(true, 0, "assets/", 0, 7);
+    }
+
+    private static boolean registerPath(Map<String, String> layout, String path) throws IOException {
+        String key = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
+        return requireSamePath(layout, key, path);
+    }
+
+    private static boolean requireSamePath(Map<String, String> paths, String key, String path) throws IOException {
+        String previous = paths.putIfAbsent(key.toLowerCase(Locale.ROOT), path);
+        if (previous != null && !previous.equals(path)) {
+            throw new IOException("Ambiguous overlay asset path collision: " + previous + " vs " + path);
+        }
+        return previous == null;
     }
 }

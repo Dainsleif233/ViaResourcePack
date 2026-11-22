@@ -79,19 +79,36 @@ final class UpgradeWorkspace {
     }
 
     List<String> files() throws IOException {
+        return entries(false);
+    }
+
+    /** 返回相对路径；需要目录时用末尾的 '/' 区分目录与文件。 */
+    List<String> entries(final boolean includeDirectories) throws IOException {
         final List<String> result = new ArrayList<String>();
         Files.walkFileTree(root, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attributes) {
+                if (includeDirectories && !root.equals(dir)) {
+                    result.add(relative(dir) + '/');
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) throws IOException {
                 if (!attributes.isRegularFile()) {
                     throw new IOException("Not a regular pack resource: " + root.relativize(file));
                 }
-                result.add(root.relativize(file).toString().replace('\\', '/'));
+                result.add(relative(file));
                 return FileVisitResult.CONTINUE;
             }
         });
         Collections.sort(result);
         return result;
+    }
+
+    private String relative(Path path) {
+        return root.relativize(path).toString().replace('\\', '/');
     }
 
     /** 批量移动：先检查全集；再暂存，支持只变大小写、以及名称相互占位。 */
