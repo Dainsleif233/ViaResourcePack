@@ -75,8 +75,7 @@ final class IntermediatePackUpgrades {
             case 24:
                 // 24w03a (07a9fef3a)：旧海龟鳞甲改 ID；与新增的 armadillo_scute 无关。
                 renameVanillaResource(workspace, 24, "scute", "turtle_scute", false);
-                warnAssets(workspace, 24, "TTF 度量与变换有变化，请复核字体回退和位移，保留定义",
-                        ".ttf", ".otf");
+                inspectTrueTypeProviders(workspace);
                 break;
             case 25:
                 // 24w04a 移除 IViewRotMat，不能按名字替代坐标空间。
@@ -865,6 +864,51 @@ final class IntermediatePackUpgrades {
 
     private static String fold(String file) {
         return file.toLowerCase(Locale.ROOT);
+    }
+
+    /** 24 改为 FreeType。file 是资源 ID，字库可能在其他包内，也不一定以 .ttf 结尾。 */
+    private static void inspectTrueTypeProviders(UpgradeWorkspace workspace) throws IOException {
+        for (String file : workspace.files()) {
+            String path = assetPath(file);
+            if (path == null || !path.startsWith("font/") || !path.endsWith(".json")) {
+                continue;
+            }
+            Map<String, Object> definition = readObject(workspace, 24, file);
+            Object rawProviders = definition == null ? null : definition.get("providers");
+            if (!(rawProviders instanceof List)) {
+                continue;
+            }
+            List<?> providers = (List<?>) rawProviders;
+            for (int i = 0; i < providers.size(); i++) {
+                Map<String, Object> provider = object(providers.get(i));
+                if (provider == null || !"ttf".equals(provider.get("type"))) {
+                    continue;
+                }
+                Object font = provider.get("file");
+                warn(workspace, 24, file + " providers[" + i + "]", "TTF 从 STB 改用 FreeType，字宽、基线和位移可能变化；"
+                        + "保留定义，请在目标客户端复核（file=" + (resourceId(font) ? font : "无效资源 ID")
+                        + ", size=" + fontNumber(provider.getOrDefault("size", 11))
+                        + ", oversample=" + fontNumber(provider.getOrDefault("oversample", 1))
+                        + ", shift=" + fontShift(provider.get("shift"), provider.containsKey("shift")) + "）");
+            }
+        }
+    }
+
+    private static String fontNumber(Object value) {
+        return value instanceof Number && Float.isFinite(((Number) value).floatValue()) ? value.toString() : "无效";
+    }
+
+    private static String fontShift(Object value, boolean specified) {
+        if (!specified) {
+            return "[0,0]";
+        }
+        if (value instanceof List) {
+            List<?> pair = (List<?>) value;
+            if (pair.size() == 2) {
+                return "[" + fontNumber(pair.get(0)) + "," + fontNumber(pair.get(1)) + "]";
+            }
+        }
+        return "无效";
     }
 
     private static void warnAssets(UpgradeWorkspace workspace, int format, String message, String... patterns) throws IOException {

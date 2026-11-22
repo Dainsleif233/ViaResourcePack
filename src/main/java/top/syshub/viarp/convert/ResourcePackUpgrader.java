@@ -30,8 +30,8 @@ import top.syshub.viarp.pack.PackMetadata;
 /** 升级内部工作树：固定原版源格式视图，逐节点迁移，最后才发布新的格式声明。 */
 final class ResourcePackUpgrader {
 
-    // 改变产物内容或选择源视图的规则时递增；不得重用旧规则的产物。
-    static final String RULES_VERSION = "builtin-20";
+    // 产物、源视图或缓存内诊断有变化时递增；不得重用旧规则的结果。
+    static final String RULES_VERSION = "builtin-21";
 
     private ResourcePackUpgrader() {
     }
