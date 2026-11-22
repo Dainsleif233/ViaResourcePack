@@ -652,16 +652,26 @@ final class IntermediatePackUpgrades {
                 }
                 continue;
             }
-            if ("-".equals(vanillaModel)) {
-                warn(workspace, 44, file, "该物品的原版入口有额外行为（如染色、条件或特殊渲染），保留旧模型；若显示异常需人工定义");
-                continue;
-            }
-            Map<String, Object> entry = modelEntry("minecraft:item/" + item);
-            if (hasOverrides) {
-                entry = customModelDataDispatch(entry, legacy);
+            Map<String, Object> entry;
+            if (ClassicItemPredicates.supports(item)) {
+                entry = ClassicItemPredicates.convert(item,
+                        old.containsKey("overrides") ? legacy : Collections.emptyList());
                 if (entry == null) {
-                    warn(workspace, 44, file, "只转换阈值可无歧义解析为有限 float 的 CustomModelData 单谓词；保留旧模型和 predicate，需人工调整");
+                    warn(workspace, 44, file, "只转换弓的 pulling/pull 或钓竿的 cast 阈值；检测到其他或歧义谓词，保留旧模型");
                     continue;
+                }
+            } else {
+                if ("-".equals(vanillaModel)) {
+                    warn(workspace, 44, file, "该物品的原版入口有额外行为（如染色、条件或特殊渲染），保留旧模型；若显示异常需人工定义");
+                    continue;
+                }
+                entry = modelEntry("minecraft:item/" + item);
+                if (hasOverrides) {
+                    entry = customModelDataDispatch(entry, legacy);
+                    if (entry == null) {
+                        warn(workspace, 44, file, "只转换阈值可无歧义解析为有限 float 的 CustomModelData 单谓词；保留旧模型和 predicate，需人工调整");
+                        continue;
+                    }
                 }
             }
             Map<String, Object> root = new LinkedHashMap<String, Object>();
