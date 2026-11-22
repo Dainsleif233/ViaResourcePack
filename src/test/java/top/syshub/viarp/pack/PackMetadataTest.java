@@ -167,5 +167,13 @@ class PackMetadataTest {
         Object reparsed = Json.parse(Json.write(parsed));
 
         assertThat(Json.write(reparsed)).isEqualTo(Json.write(parsed));
+
+        PackMetadata precise = PackMetadata.parse("{\"pack\":{\"pack_format\":4,\"description\":\"precise\"},"
+                + "\"extension\":[9223372036854775809,1e400,1.234567890123456789,-0.0,1e-400]}");
+        String rewritten = precise.withFormat(PackFormat.of(5));
+        assertThat(rewritten).contains("9223372036854775809", "1E+400", "1.234567890123456789", "-0.0", "1E-400");
+        assertThat(PackMetadata.parse(rewritten).primaryFormat()).isEqualTo(PackFormat.of(5));
+        assertThat(PackMetadata.parse("{\"pack\":{\"pack_format\":4.00000000000000001,\"description\":\"invalid\"}}")
+                .primaryFormat().isKnown()).isFalse();
     }
 }

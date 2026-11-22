@@ -17,6 +17,7 @@
  */
 package top.syshub.viarp.json;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -35,12 +36,13 @@ import java.util.Map;
  * 原版自己也用 lenient 模式读它。
  *
  * <p>值的 Java 映射：对象 → {@link LinkedHashMap}，数组 → {@link ArrayList}，
- * 字符串 → {@link String}，数字 → {@link Long}（整数）或 {@link Double}，
+ * 字符串 → {@link String}，数字 → {@link Long}、{@link Double} 或 {@link BigDecimal}，
  * 布尔 → {@link Boolean}，null → {@code null}。
  */
 public final class Json {
 
     private static final int MAX_CONTAINER_DEPTH = 96;
+    private static final int MAX_EXACT_NUMBER_LENGTH = 512;
 
     private final String text;
     private final boolean rejectDuplicateKeys;
@@ -79,7 +81,7 @@ public final class Json {
         return requireObject(parse(raw));
     }
 
-    /** 内容改写需要唯一键，但仍接受资源包中常见的注释和尾逗号。 */
+    /** 内容改写要求唯一键和精确数值，但仍接受注释和尾逗号。 */
     public static Map<String, Object> parseObjectRejectingDuplicateKeys(String raw) throws JsonException {
         return requireObject(parse(raw, true));
     }
@@ -277,9 +279,15 @@ public final class Json {
                 break;
             }
         }
+        if (rejectDuplicateKeys && pos - start > MAX_EXACT_NUMBER_LENGTH) {
+            throw error("number exceeds " + MAX_EXACT_NUMBER_LENGTH + " characters");
+        }
         String token = text.substring(start, pos);
         if (token.isEmpty() || "-".equals(token) || "+".equals(token)) {
             throw error("expected a value");
+        }
+        if (rejectDuplicateKeys) {
+            return exactNumber(token, floating);
         }
         try {
             if (floating) {
@@ -292,6 +300,25 @@ public final class Json {
             } catch (NumberFormatException e2) {
                 throw error("invalid number: " + token);
             }
+        }
+    }
+
+    private Number exactNumber(String token, boolean floating) throws JsonException {
+        if (!floating && !"-0".equals(token)) {
+            try {
+                return Long.valueOf(token);
+            } catch (NumberFormatException ignored) {
+                // 大整数也要保留精度，不能通过 double 受舍入影响。
+            }
+        }
+        try {
+            BigDecimal number = new BigDecimal(token);
+            if (number.signum() == 0 && token.charAt(0) == '-') {
+                return Double.valueOf(-0.0d);
+            }
+            return number;
+        } catch (NumberFormatException e) {
+            throw error("invalid exact number: " + token);
         }
     }
 
@@ -416,7 +443,9 @@ public final class Json {
     private static void writeNumber(StringBuilder out, Number number) {
         if (number instanceof Double || number instanceof Float) {
             double d = number.doubleValue();
-            if (d == Math.rint(d) && !Double.isInfinite(d)) {
+            // (double) Long.MAX_VALUE 会舍入到 2^63；用上界开区间避免饱和截断，也不要把负零写成整数。
+            if (d >= -0x1.0p63 && d < 0x1.0p63 && d == Math.rint(d)
+                    && Double.doubleToRawLongBits(d) != Long.MIN_VALUE) {
                 out.append((long) d);
                 return;
             }

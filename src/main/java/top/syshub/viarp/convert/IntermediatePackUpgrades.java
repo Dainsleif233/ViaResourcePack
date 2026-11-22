@@ -737,7 +737,7 @@ final class IntermediatePackUpgrades {
             laterMinimum = value;
             String reference = (String) old.get("model");
             Map<String, Object> entry = new LinkedHashMap<String, Object>();
-            // 用可往返同一 float 的十进制数，不走 Json 对 Float/Double 的整数截断分支。
+            // 写出可在原版 codec 中往返为同一 float 的十进制阈值。
             BigDecimal encoded = new BigDecimal(Float.toString(value)).stripTrailingZeros();
             entry.put("threshold", encoded.scale() < 0 ? encoded.setScale(0) : encoded);
             entry.put("model", modelEntry(reference.indexOf(':') < 0 ? "minecraft:" + reference : reference));
@@ -755,18 +755,8 @@ final class IntermediatePackUpgrades {
     }
 
     private static float legacyFloatThreshold(Number number) {
-        float value = number.floatValue();
-        if (number instanceof Double && Float.isFinite(value)) {
-            double parsed = number.doubleValue();
-            if (parsed != value) {
-                // 原版直接将 JSON 数字读为 float。核心 JSON 先读为 Double：恰在 float 中点时，
-                // 丢掉的十进制尾数可能改变原版舍入方向，无法无歧义转换。
-                float adjacent = Math.nextAfter(value, parsed);
-                if (parsed == ((double) value + adjacent) * 0.5) {
-                    return Float.NaN;
-                }
-            }
-        }
+        // 严格 JSON 解析保留十进制精度；直接转为 float，不能先经过 double 再舍入。
+        float value = Float.parseFloat(number.toString());
         // 旧组件是 int，转 float 后只有正零；旧阈值比较不区分零的符号。
         return value == 0.0f ? 0.0f : value;
     }

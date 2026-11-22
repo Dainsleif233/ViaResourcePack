@@ -17,6 +17,7 @@
  */
 package top.syshub.viarp.pack;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -342,6 +343,21 @@ public final class PackMetadata {
     private static int nonNegativeInt(Object value) {
         if (!(value instanceof Number)) {
             return -1;
+        }
+        if (value instanceof BigDecimal) {
+            BigDecimal exact = (BigDecimal) value;
+            if (exact.signum() == 0) {
+                return 0;
+            }
+            long digits = (long) exact.precision() - exact.scale();
+            if (exact.signum() < 0 || digits < 1 || digits > 10) {
+                return -1;
+            }
+            try {
+                return exact.intValueExact();
+            } catch (ArithmeticException e) {
+                return -1;
+            }
         }
         double number = ((Number) value).doubleValue();
         int integer = (int) number;
