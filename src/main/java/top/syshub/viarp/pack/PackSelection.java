@@ -18,6 +18,8 @@
 package top.syshub.viarp.pack;
 
 import java.io.IOException;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
@@ -50,7 +52,7 @@ import top.syshub.viarp.json.Json;
  *                 └─ PackRepository.reload() → 我们的拦截点   ← 此时读到的就是新列表
  * </pre>
  *
- * <p>关键点是 {@code save()} 排在 {@code reloadResourcePacks()} 前面（1.14.4 – 26.2 都是
+ * <p>关键点是 {@code save()} 排在 {@code reloadResourcePacks()} 前面（1.14.4 – 26.3 都是
  * 这个顺序），因此拦截点读到的 {@code options.txt} 一定已经包含玩家刚勾上的包。反过来，
  * 只是打开界面浏览时 {@code options.txt} 不变，未启用的包自然不会被转换。
  *
@@ -59,16 +61,17 @@ import top.syshub.viarp.json.Json;
  * 老写法（{@code getPack(name)} 失败后再试 {@code getPack("file/" + name)}），所以这里两种
  * 形态都认。
  *
- * <p>文件按 mtime + 大小缓存，界面里改完选择后会自动重读。
+ * <p>每次读取受限的选项快照，只按 {@code resourcePacks} 行的内容复用解析结果。
  */
 public final class PackSelection {
 
+    private static final int MAX_OPTIONS_CHARS = 1024 * 1024;
     private final Path optionsFile;
 
-    private long cachedModified = Long.MIN_VALUE;
-    private long cachedSize = Long.MIN_VALUE;
+    private String cachedValue;
     private Set<String> cachedIds = Collections.emptySet();
-    private boolean cachedReadable;
+    private IOException cachedParseFailure;
+    private boolean failureLogged;
 
     public PackSelection(Path optionsFile) {
         this.optionsFile = optionsFile;
@@ -91,41 +94,53 @@ public final class PackSelection {
 
     /** 当前 {@code options.txt} 里的 {@code resourcePacks} 集合（原样，含 {@code file/} 前缀）。 */
     public synchronized Set<String> selectedIds() {
-        long modified = PathIo.lastModifiedOrMinusOne(optionsFile);
-        long size = PathIo.sizeOrMinusOne(optionsFile);
-        if (modified == cachedModified && size == cachedSize) {
-            return cachedIds;
-        }
-        cachedModified = modified;
-        cachedSize = size;
-        cachedIds = read();
-        return cachedIds;
-    }
-
-    private Set<String> read() {
         if (!Files.isRegularFile(optionsFile)) {
             // 全新游戏目录：还没有任何包被启用，这不是错误。
-            cachedReadable = true;
+            failureLogged = false;
             return Collections.emptySet();
         }
         String value;
         try {
-            value = findLine(PathIo.readString(optionsFile));
+            value = findLine(readOptions());
         } catch (IOException e) {
             warnOnce("Could not read {}; treating every local pack as not installed", e);
             return Collections.emptySet();
         }
         if (value == null) {
-            // 1.14.4 – 26.2 都会写这一行；缺失说明玩家从没启用过任何包。
-            cachedReadable = true;
+            failureLogged = false;
             return Collections.emptySet();
         }
-        try {
-            return parseList(value);
-        } catch (IOException e) {
-            warnOnce("Malformed resourcePacks entry in {}; treating every local pack as not installed", e);
-            return Collections.emptySet();
+        if (!value.equals(cachedValue)) {
+            cachedValue = value;
+            try {
+                cachedIds = Collections.unmodifiableSet(parseList(value));
+                cachedParseFailure = null;
+            } catch (IOException e) {
+                cachedIds = Collections.emptySet();
+                cachedParseFailure = e;
+            }
         }
+        if (cachedParseFailure != null) {
+            warnOnce("Malformed resourcePacks entry in {}; treating every local pack as not installed", cachedParseFailure);
+        } else {
+            failureLogged = false;
+        }
+        return cachedIds;
+    }
+
+    private String readOptions() throws IOException {
+        StringBuilder text = new StringBuilder();
+        char[] buffer = new char[4096];
+        try (Reader reader = Files.newBufferedReader(optionsFile, StandardCharsets.UTF_8)) {
+            int length;
+            while ((length = reader.read(buffer)) != -1) {
+                if (length > MAX_OPTIONS_CHARS - text.length()) {
+                    throw new IOException("options.txt exceeds " + MAX_OPTIONS_CHARS + " characters");
+                }
+                text.append(buffer, 0, length);
+            }
+        }
+        return PathIo.stripBom(text.toString());
     }
 
     /**
@@ -156,15 +171,14 @@ public final class PackSelection {
                 ids.add((String) element);
             }
         }
-        cachedReadable = true;
         return ids;
     }
 
-    /** 同一个失败原因只报一次，避免每次资源重载都刷同样的警告。 */
+    /** 连续失败只报一次，恢复后可以再提示下一次失败。 */
     private void warnOnce(String message, Throwable failure) {
-        if (cachedReadable) {
+        if (!failureLogged) {
             ViaRpLog.warn(message, optionsFile, failure);
+            failureLogged = true;
         }
-        cachedReadable = false;
     }
 }

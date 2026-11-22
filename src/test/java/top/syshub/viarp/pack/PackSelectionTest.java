@@ -79,6 +79,16 @@ class PackSelectionTest {
                 System.currentTimeMillis() + 2000L));
 
         assertThat(selection.isEnabled("new.zip")).isTrue();
+
+        // 在粗粒度时间戳文件系统或同步恢复后，等长的选择交换可能保留相同时间戳。
+        long size = Files.size(options);
+        java.nio.file.attribute.FileTime timestamp = Files.getLastModifiedTime(options);
+        Files.write(options, "resourcePacks:[\"file/old.zip\"]\n".getBytes(StandardCharsets.UTF_8));
+        Files.setLastModifiedTime(options, timestamp);
+        assertThat(Files.size(options)).isEqualTo(size);
+        assertThat(Files.getLastModifiedTime(options)).isEqualTo(timestamp);
+        assertThat(selection.isEnabled("new.zip")).isFalse();
+        assertThat(selection.isEnabled("old.zip")).isTrue();
     }
 
     @Test

@@ -68,7 +68,7 @@ PackSelectionScreen.onClose
 
 `save()` 排在 `reloadResourcePacks()` **之前**，这个顺序在 1.14.4 – 26.3 全程未变（1.14.4 是 `ResourcePackSelectScreen` 的 Done 按钮里手写的 `options.save()` + `reloadResourcePacks()`，1.16+ 收敛进 `Options.updateResourcePacks`）。因此拦截点读 `options.txt` 一定能看到玩家刚勾上的包；反之只是浏览界面时文件不变，未启用的包自然不转换。
 
-`PackSelection` 按 mtime + 大小缓存这一行，界面里改完选择会自动重读。包 id 认 `file/<文件名>`（1.14.4 起 `FolderRepositorySource` 固定这个前缀）与裸文件名两种形态——`Options.loadSelectedResourcePacks` 至今仍兼容后者。匹配 `resourcePacks:` 时必须精确比键名：`incompatibleResourcePacks` 以同样的子串结尾。
+`PackSelection` 每次读取有大小上限的 UTF-8 `options.txt`，只按 `resourcePacks` 行的实际内容复用解析；即使大小和 mtime 不变，也能看到选择交换。包 id 认 `file/<文件名>`（1.14.4 起 `FolderRepositorySource` 固定这个前缀）与裸文件名两种形态——`Options.loadSelectedResourcePacks` 至今仍兼容后者。匹配 `resourcePacks:` 时必须精确比键名：`incompatibleResourcePacks` 以同样的子串结尾。
 
 想让整个目录提前转好可以把 `config.json` 的 `onlyConvertEnabledPacks` 关掉。
 
