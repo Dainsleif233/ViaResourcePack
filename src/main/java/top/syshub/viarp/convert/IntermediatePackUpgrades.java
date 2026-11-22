@@ -22,28 +22,20 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReader;
-import javax.imageio.stream.FileImageInputStream;
-import javax.imageio.stream.ImageInputStream;
 
 import top.syshub.viarp.json.Json;
 import top.syshub.viarp.pack.PackFormat;
@@ -54,7 +46,6 @@ final class IntermediatePackUpgrades {
     private static final String VANILLA = "assets/minecraft/";
     private static final String GUI = VANILLA + "textures/gui/";
     private static final String ITEM_ENTRIES = "/viarp/migrations/intermediate/item-entrypoints-44.txt";
-    private static final int MAX_SHEET_EDGE = 4096;
 
     private IntermediatePackUpgrades() {
     }
@@ -222,22 +213,19 @@ final class IntermediatePackUpgrades {
             workspace.warn("分图：" + source + " 有元数据，无法无损映射到单个精灵；保留旧 PNG 与侧车");
             return;
         }
-        BufferedImage sheet = readSheet(workspace, source, edge);
-        if (sheet == null) {
+        BufferedImage sheet;
+        try {
+            sheet = UpgradePng.scaledSheet(workspace.path(source), edge, edge);
+        } catch (IOException ex) {
+            workspace.warn("分图：无法拆分旧 PNG，保留旧图：" + source + "（" + ex.getMessage() + "）");
             return;
         }
         try {
             int scale = sheet.getWidth() / edge;
             for (Sprite sprite : missing) {
                 String target = directory + sprite.name + ".png";
-                Path path = workspace.path(target);
-                Files.createDirectories(path.getParent());
-                try (OutputStream out = Files.newOutputStream(path, StandardOpenOption.CREATE_NEW)) {
-                    if (!ImageIO.write(sheet.getSubimage(sprite.x * scale, sprite.y * scale,
-                            sprite.width * scale, sprite.height * scale), "png", out)) {
-                        throw new IOException("No PNG writer for " + target);
-                    }
-                }
+                UpgradePng.writeNew(workspace.path(target), sheet.getSubimage(sprite.x * scale, sprite.y * scale,
+                        sprite.width * scale, sprite.height * scale));
                 occupied.add(fold(target));
                 if (sprite.border > 0) {
                     workspace.writeText(target + ".mcmeta", "{\"gui\":{\"scaling\":{\"type\":\"nine_slice\","
@@ -249,34 +237,6 @@ final class IntermediatePackUpgrades {
         } finally {
             sheet.flush();
         }
-    }
-
-    private static BufferedImage readSheet(UpgradeWorkspace workspace, String source, int edge) throws IOException {
-        Path path = workspace.path(source);
-        try (ImageInputStream stream = new FileImageInputStream(path.toFile())) {
-            Iterator<ImageReader> readers = ImageIO.getImageReaders(stream);
-            if (readers.hasNext()) {
-                ImageReader reader = readers.next();
-                try {
-                    if ("png".equalsIgnoreCase(reader.getFormatName())) {
-                        reader.setInput(stream, true, true);
-                        int width = reader.getWidth(0);
-                        int height = reader.getHeight(0);
-                        if (width == height && width >= edge && width <= MAX_SHEET_EDGE && width % edge == 0) {
-                            return reader.read(0);
-                        }
-                    }
-                } finally {
-                    reader.dispose();
-                }
-            }
-        } catch (IOException ex) {
-            workspace.warn("分图：" + source + " 无法解码 PNG；保留旧图");
-            return null;
-        }
-        workspace.warn("分图：" + source + " 只拆分 " + edge + "×" + edge
-                + " 的整数倍 PNG（上限 " + MAX_SHEET_EDGE + "），保留旧图");
-        return null;
     }
 
     private static final class Sprite {
