@@ -31,7 +31,7 @@ import top.syshub.viarp.pack.PackMetadata;
 final class ResourcePackUpgrader {
 
     // 改变产物内容或选择源视图的规则时递增；不得重用旧规则的产物。
-    static final String RULES_VERSION = "builtin-18";
+    static final String RULES_VERSION = "builtin-19";
 
     private ResourcePackUpgrader() {
     }
@@ -56,6 +56,8 @@ final class ResourcePackUpgrader {
         }
         // 同一旧滑杆在格式 16 与 17+ 的缺省尺寸不同，只按最终格式生成一次。
         int widgetBoundary = Math.max(16, from.major() + 1);
+        // 独立绘画纹理在格式 4 内引入。首次到 4 时拆分；以旧格式 4 为源时在 5 补做。
+        int paintingBoundary = Math.max(4, from.major() + 1);
         for (PackFormat entered : PackFormatHistory.route(from, target)) {
             if (widgetBoundary <= 18 && entered.major() == widgetBoundary) {
                 ClassicWidgetDetails.apply(pack, target.major() >= 17);
@@ -70,6 +72,9 @@ final class ResourcePackUpgrader {
                 IntermediatePackUpgrades.apply(entered, pack);
             } else {
                 ModernPackUpgrades.apply(entered, pack);
+            }
+            if (paintingBoundary <= 5 && entered.major() == paintingBoundary) {
+                ClassicPaintingUpgrades.apply(pack);
             }
         }
         // 对旧纹理包，格式 1 步骤负责从 pack.txt 生成原有描述。
