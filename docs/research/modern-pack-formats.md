@@ -180,7 +180,15 @@ git -C D:/Code/jsucraft/MC show da28c03af:client/net/minecraft/server/packs/meta
 | 88.0 | `textures/block/{quartz_pillar,purpur_pillar}.png` → 同目录 `{quartz_pillar,purpur_pillar}_side.png` | 保持顶面 / 其他引用；[26.2 Pre-Release 1](https://www.minecraft.net/en-us/article/minecraft-26-2-pre-release-1)（`88fe5875f`） |
 | 89.0 | vanilla 调色板 `textures/trims/color_palettes/<id>.png` → `textures/palettes/trim/<id>.png`；特例源 `trim_palette.png` → `textures/palettes/trim_base.png`；atlas 的 `palette_key` / `permutations` 从旧 ID `trims/color_palettes/<id>` 改为相对 `textures/palettes/` 的 ID `trim/<id>`，base 则为 `trim_base` | [26.3 Snapshot 1](https://www.minecraft.net/en-us/article/minecraft-26-3-snapshot-1)（`92ec35563`）引入。公告写 `trim/color_palettes`，旧版生成器 `894728dcf:client/net/minecraft/client/data/AtlasProvider.java:38–39` 明确为 **`trims`**，以实际路径为准；新版去向见 `634debadb:client/net/minecraft/client/data/AtlasProvider.java:31,59` 和 `634debadb:client/net/minecraft/client/resources/palette/Palette.java:32`。只对路径与引用都确认的调色板改写，不重写任意自定义 palette。 |
 | 91.0 | 在 `models/` 方块几何的 `elements[]` 中，将已知 `shade:false` 改为 `shade_direction_override:"up"`，旧 `shade:true` 使用新缺省；已有合法新字段不覆盖 | 仅限布尔旧值及正确元素槽，遇冲突诊断；[26.3 Snapshot 3](https://www.minecraft.net/en-us/article/minecraft-26-3-snapshot-3)（`87e8628cf`）明示此等价映射 |
+| 96.0 | `ancient_city_map`→`buried_ancient_city_map`，`mineshaft_map`→`buried_mineshaft_map`，`abandoned_campsite_map`→`abandoned_camp_map` | [26.3 Snapshot 8](https://www.minecraft.net/en-us/article/minecraft-26-3-snapshot-8)；入口、几何、贴图和 `item.minecraft.*` 语言键随注册 ID 改名。见下方制品核对。 |
+| 97.0 | 五个探险地图注册 ID 改名；旧贴图与旧入口不一定同名 | [26.3 Snapshot 10](https://www.minecraft.net/en-us/article/minecraft-26-3-snapshot-10)；原始贴图 ID 和模型 ID 各用独立映射。 |
 | 102.0 | `textures/block/icicle_down_{base,frustum,middle,tip,tip_merge}.png` → 只去掉 `_down` | 适用于 26.4 目标或迁移夹具，不改变 26.3 运行边界；[26.4 Snapshot 7](https://www.minecraft.net/en-us/article/minecraft-26-4-snapshot-7) |
+
+### 26.3 探险地图资源边界
+
+[格式 95 客户端](https://piston-data.mojang.com/v1/objects/16169fc68cc553b82f495bb2896bde6170aa51a7/client.jar)、[格式 96 客户端](https://piston-data.mojang.com/v1/objects/dd75cb26bf71099ae196080606dbaaf6eb77d59a/client.jar)和[格式 97 客户端](https://piston-data.mojang.com/v1/objects/b36eac90fae6cce3c83c5cb42e11d3ea8cd04f19/client.jar)均按各自 Mojang profile 的 SHA-1 检查。三加五组的旧注册入口在对应新制品中消失；两端各自的 `items/<id>.json` 均指向 `models/item/<id>.json`。对照两个几何的 `textures.layer0`，八对 PNG 字节完全相同，明确证实旧图可以原样复制。97.0 中的 `trial_explorer_map` 原本引用 `trial_chamber_map`，目标两处都是 `buried_trial_chambers_map`；丛林地图也区分 `jungle_explorer_map`、`jungle_temple_map`、`jungle_pyramid_map`。证据代码：`c581feaf7:client/net/minecraft/references/ItemIds.java:204–207` 与 `c581feaf7:client/net/minecraft/client/data/models/ItemModelGenerators.java:636–644`；下一边界 `6c8b8ec87` 同类。
+
+迁移只给可确认的原版资源补新路径；包内明确的新版文件、侧车和语言值优先。语言层仅在 `assets/minecraft/lang/<locale>.json` 内为字符串补充新 `item.minecraft.<id>` 键，保留旧键和值。本例不迁移地图装饰或物品数据，不把原版新名称复制进用户资源包。
 
 ## 不能只靠移动或改版本号的变化
 

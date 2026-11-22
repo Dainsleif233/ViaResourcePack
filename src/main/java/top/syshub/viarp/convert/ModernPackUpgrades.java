@@ -47,8 +47,13 @@ final class ModernPackUpgrades {
             "gold_darker", "iron_darker", "netherite_darker");
     private static final List<String> TRIM_PATTERNS = Arrays.asList("bolt", "coast", "dune", "eye", "flow", "host",
             "raiser", "rib", "sentry", "shaper", "silence", "snout", "spire", "tide", "vex", "ward", "wayfinder", "wild");
-    // 6c8b8ec87：registry ID、几何模型 ID 和贴图 ID 不总是同名，分别处理。
-    private static final String[][] MAP_RENAMES = {
+    // 注册入口、贴图源、新注册 ID；格式 97 并非所有旧贴图都与旧入口同名。
+    private static final String[][] MAP_RENAMES_96 = {
+            {"ancient_city_map", "ancient_city_map", "buried_ancient_city_map"},
+            {"mineshaft_map", "mineshaft_map", "buried_mineshaft_map"},
+            {"abandoned_campsite_map", "abandoned_campsite_map", "abandoned_camp_map"}
+    };
+    private static final String[][] MAP_RENAMES_97 = {
             {"ocean_explorer_map", "ocean_monument_map", "ocean_monument_map"},
             {"woodland_explorer_map", "woodland_mansion_map", "woodland_mansion_map"},
             {"trial_explorer_map", "trial_chamber_map", "buried_trial_chambers_map"},
@@ -93,8 +98,10 @@ final class ModernPackUpgrades {
             migrateEquipmentTrimOverrides(workspace);
         } else if (major == 95 && minor == 0) {
             inspectLegacyMapTints(workspace);
+        } else if (major == 96 && minor == 0) {
+            migrateExplorerMaps(workspace, MAP_RENAMES_96);
         } else if (major == 97 && minor == 0) {
-            migrateExplorerMaps(workspace);
+            migrateExplorerMaps(workspace, MAP_RENAMES_97);
         }
 
         if ((major == 65 && minor == 0) || (major == 69 && minor == 0)
@@ -318,11 +325,11 @@ final class ModernPackUpgrades {
         }
     }
 
-    private static void migrateExplorerMaps(UpgradeWorkspace workspace) throws IOException {
+    private static void migrateExplorerMaps(UpgradeWorkspace workspace, String[][] renames) throws IOException {
         AliasFiles aliases = new AliasFiles(workspace);
         Map<String, String> sprites = new LinkedHashMap<String, String>();
         Map<String, String> models = new LinkedHashMap<String, String>();
-        for (String[] rename : MAP_RENAMES) {
+        for (String[] rename : renames) {
             String oldModel = "item/" + rename[0];
             String oldSprite = "item/" + rename[1];
             String target = "item/" + rename[2];
@@ -335,6 +342,28 @@ final class ModernPackUpgrades {
             aliases.file(VANILLA + "items/" + rename[0] + ".json", VANILLA + "items/" + rename[2] + ".json");
         }
         rewriteModelReferences(workspace, sprites, models);
+        for (String file : workspace.files()) {
+            if (!file.startsWith(VANILLA + "lang/") || !file.endsWith(".json")
+                    || file.indexOf('/', (VANILLA + "lang/").length()) >= 0) {
+                continue;
+            }
+            Map<String, Object> language = readObject(workspace, file);
+            if (language == null) {
+                continue;
+            }
+            boolean changed = false;
+            for (String[] rename : renames) {
+                Object value = language.get("item.minecraft." + rename[0]);
+                String destination = "item.minecraft." + rename[2];
+                if (value instanceof String && !language.containsKey(destination)) {
+                    language.put(destination, value);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                writeObject(workspace, file, language);
+            }
+        }
     }
 
     private static void addTextureAlias(AliasFiles aliases, Map<String, String> sprites, String from, String to)
