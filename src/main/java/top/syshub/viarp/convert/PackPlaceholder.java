@@ -21,7 +21,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 
 import top.syshub.viarp.ViaRpPaths;
 import top.syshub.viarp.io.PathIo;
@@ -39,18 +38,17 @@ final class PackPlaceholder {
 
     synchronized Path create(Path source, PackFormat target) throws IOException {
         // 保留原文件名，让老版本按路径文件名生成的 file/ ID 也保持不变。
-        Path stub = paths.stubDir().resolve(source.getFileName());
+        Path stub = paths.ensureStubDirectory(source.getFileName());
         Path meta = stub.resolve("pack.mcmeta");
-        if (Files.isSymbolicLink(stub) || Files.isSymbolicLink(meta)) {
-            throw new IOException("Invalid legacy texture pack placeholder path");
-        }
         if (!Files.isRegularFile(meta, LinkOption.NOFOLLOW_LINKS)) {
-            Files.createDirectories(stub);
+            if (!Files.notExists(meta, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Invalid legacy texture pack placeholder metadata: " + meta);
+            }
             Path temporary = Files.createTempFile(stub, ".metadata-", ".tmp");
             try {
                 PathIo.writeString(temporary, PackMetadata.minimal(target,
                         "ViaResourcePack: legacy texture pack; upgraded when enabled"));
-                Files.move(temporary, meta, StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temporary, meta);
             } finally {
                 Files.deleteIfExists(temporary);
             }

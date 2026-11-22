@@ -18,8 +18,11 @@
 package top.syshub.viarp;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -28,7 +31,7 @@ import top.syshub.viarp.json.Json;
 import top.syshub.viarp.json.JsonAccess;
 
 /**
- * 配置（{@code <gameDir>/config/viaresourcepack/config.json}）。
+ * 配置（默认 {@code <gameDir>/config/viaresourcepack/config.json}，显式覆盖时随数据根移动）。
  *
  * <p>没有 GUI：各版本的配置界面 API 差异巨大，为了一个开关引入 7 份 UI 适配不值得。
  * 文件不存在时会写一份带默认值的出来。
@@ -66,7 +69,12 @@ public final class ViaRpConfig {
             synchronized (ViaRpConfig.class) {
                 existing = instance;
                 if (existing == null) {
-                    existing = loadOrCreate(ViaRpPaths.get().root().resolve(FILE_NAME));
+                    try {
+                        existing = loadOrCreate(ViaRpPaths.get().ensureConfigPath(FILE_NAME));
+                    } catch (IOException e) {
+                        ViaRpLog.warn("Could not prepare ViaResourcePack config path; using defaults", e);
+                        existing = defaults();
+                    }
                     instance = existing;
                 }
             }
@@ -76,12 +84,17 @@ public final class ViaRpConfig {
 
     static ViaRpConfig loadOrCreate(Path file) {
         ViaRpConfig defaults = defaults();
-        if (!Files.isRegularFile(file)) {
+        if (Files.notExists(file, LinkOption.NOFOLLOW_LINKS)) {
             try {
-                PathIo.writeString(file, defaults.toJson());
+                Files.write(file, defaults.toJson().getBytes(StandardCharsets.UTF_8),
+                        StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
             } catch (IOException e) {
                 ViaRpLog.warn("Could not write default config to {}", file, e);
             }
+            return defaults;
+        }
+        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
+            ViaRpLog.warn("Not a regular config file: {}; using defaults", file);
             return defaults;
         }
         try {
