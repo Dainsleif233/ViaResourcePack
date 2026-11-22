@@ -55,14 +55,16 @@ final class ResourcePackUpgrader {
         if (metadata != null) {
             projectOverlays(pack, metadata.overlaysFor(from));
         }
+        List<PackFormat> route = PackFormatHistory.route(from, target);
         if (verbose) {
-            ViaRpLog.debug("Resource pack migration route: {} -> {}", from, PackFormatHistory.route(from, target));
+            // config 已主动开启详细日志，不要求另外开启 Minecraft 的 DEBUG 级别。
+            ViaRpLog.info("Resource pack migration route: {} -> {}", from, route);
         }
         // 同一旧滑杆在格式 16 与 17+ 的缺省尺寸不同，只按最终格式生成一次。
         int widgetBoundary = Math.max(16, from.major() + 1);
         // 独立绘画纹理在格式 4 内引入。首次到 4 时拆分；以旧格式 4 为源时在 5 补做。
         int paintingBoundary = Math.max(4, from.major() + 1);
-        for (PackFormat entered : PackFormatHistory.route(from, target)) {
+        for (PackFormat entered : route) {
             if (widgetBoundary <= 18 && entered.major() == widgetBoundary) {
                 ClassicWidgetDetails.apply(pack, target.major() >= 17);
             }

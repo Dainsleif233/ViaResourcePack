@@ -41,7 +41,7 @@ After the first launch a config file is generated at `<game dir>/config/viaresou
 | `convertServerPacks`      | Convert server- / world-provided packs                                                                                                |
 | `onlyConvertEnabledPacks` | Convert only local packs that are enabled. Turning this off makes the whole directory convert when the resource pack screen is opened |
 | `maxCacheMegabytes`       | Cache size limit; old entries are evicted by creation time when exceeded                                                              |
-| `verbose`                 | Log the pack format migration route                                                                                   |
+| `verbose`                 | Show the format migration route in the normal game log when a pack is converted                                                       |
 
 Caches and temporary files live under `<game dir>/config/viaresourcepack/`; you can delete `cache/` after exiting Minecraft; the next launch will re-create needed outputs.
 
@@ -56,6 +56,14 @@ Caches and temporary files live under `<game dir>/config/viaresourcepack/`; you 
 Only assets with known equivalents can be migrated automatically. Unmapped cells in old texture atlases, removed resources, and some custom models, shaders and mod-specific formats may need manual work. The log lists detected issues and points to `warnings.txt` next to the cached pack, where the report remains available on cache hits.
 
 The first upgrade runs during resource loading and may pause the game for large packs. Later loads can reuse the cached result. If Minecraft 26.x logs that it removed a stale incompatibility flag but does not load the pack in that pass, re-enable it in the pack screen or exit normally and restart.
+
+### How can I check the result?
+
+Look in the game’s `logs/latest.log`:
+
+- `Upgraded … -> …`: a converted copy was written to the cache. If only some assets look wrong, check `warnings.txt` next to the cached copy. No report does not mean every asset was verified.
+- `Not upgrading`: there is no supported upgrade path. For example, use a client that supports format 104 or an older release of that pack instead of trying to downgrade it to 26.3.
+- `Failed to convert …; loading it unchanged`: conversion failed and vanilla received the original path. The log includes the reason.
 
 ## Building
 
