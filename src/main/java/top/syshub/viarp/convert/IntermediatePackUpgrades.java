@@ -107,6 +107,9 @@ final class IntermediatePackUpgrades {
                 warnAssets(workspace, 52, "原版改用渲染管线；自定义着色器需要检查独立 shader 字段和 include",
                         "/shaders/core/", "/shaders/post/");
                 break;
+            case 53:
+                SpawnEggUpgrades.apply(workspace);
+                break;
             case 54:
                 moveTexturePairs(workspace, 54, new String[][] {
                         { "misc/enchanted_glint_entity", "misc/enchanted_glint_armor" }
