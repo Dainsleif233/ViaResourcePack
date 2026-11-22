@@ -4,7 +4,7 @@
 
 ## 1. 快照边界与制品
 
-[既有格式研究](<docs/research/modern-pack-formats.md#L60-L69>) 的 52/53 ref 与本地 `D:/Code/jsucraft/MC` 对应；该研究原把蛋改动列在 [47–55 窗口](<docs/research/modern-pack-formats.md#L201>)。[Mojang 25w08a 公告](https://www.minecraft.net/en-us/article/minecraft-snapshot-25w08a) 同时声明资源格式 53、重画新蛋和移除旧两图。按官方版本清单校验 profile SHA-1，再按 profile 校验客户端 JAR SHA-1 与大小；实际格式读 JAR 的 `version.json`，与各 ref 的 `client/net/minecraft/DetectedVersion.java:47–48` 相符。
+[既有格式研究](<modern-pack-formats.md#L60-L69>) 的 52/53 ref 与本地 `D:/Code/jsucraft/MC` 对应；该研究原把蛋改动列在 [47–55 窗口](<modern-pack-formats.md#L201>)。[Mojang 25w08a 公告](https://www.minecraft.net/en-us/article/minecraft-snapshot-25w08a) 同时声明资源格式 53、重画新蛋和移除旧两图。按官方版本清单校验 profile SHA-1，再按 profile 校验客户端 JAR SHA-1 与大小；实际格式读 JAR 的 `version.json`，与各 ref 的 `client/net/minecraft/DetectedVersion.java:47–48` 相符。
 
 | 客户端 | MC ref / resource / data | Profile SHA-1 | 客户端 JAR SHA-1；字节 |
 | --- | --- | --- | --- |
@@ -65,7 +65,7 @@ chosen → per channel round(chosen.rgb * tint[chosen_layer].rgb / 255), A=255
 | **自定义模型或已有目标文件** | 显式目标入口/几何/独立纹理/侧车优先；不按 81 个 ID 对所有包无条件生成或覆盖。自定义 UV、选择树、动态 tint、foil、自定义 atlas、filter/overlays、跨包冲突、模组等需先解析有效的引用链；没有证据就标未知，不以重命名或改格式号当成迁移。 |
 | **资源侧车 `.png.mcmeta`** | 原版这条 atlas 路径只选择 `animation`（`02027c155:client/net/minecraft/client/renderer/texture/SpriteLoader.java:44,111–115`，`02027c155:client/net/minecraft/client/resources/model/AtlasSet.java:47`）；`02027c155:client/net/minecraft/client/renderer/texture/atlas/SpriteResourceLoader.java:36–71` 读元数据、验证帧尺寸整除、无该节才以整图为单帧。帧顺序、时间、插值影响结果；边还按所有唯一帧生成。`02027c155:client/net/minecraft/server/packs/resources/FallbackResourceManager.java:218–220,226–238` 表明有效侧车可来自 PNG 所在包或更高优先级，且有 filter；不能只看本 ZIP。不要把一侧侧车直接配给合并结果；本次没有实测用户动画、OptiFine/PBR 或其他扩展，有效侧车、解析异常及未知扩展先不烘焙。若保留层，也仅在源/目标读取语义已确认时原路径保留对应侧车。 |
 | **源包 shader 源、include 或其附属配置** | `02027c155:client/net/minecraft/client/renderer/ShaderManager.java:83–105,111–132` 从资源管理器读覆盖后的 shader 源，解析相对与命名空间 include。原版蛋依赖上述 core 程序及 light/fog；任一替换都可能改变 tint、采样、discard 或先后顺序。有效 shader/依赖无法证明原版等价就标未知并跳过烘焙；不删除或自动改写 shader、include 和配置，也不把透传当成兼容证明。 |
-| **更早、更晚或未证实的包型** | [既有研究的 44–46 入口迁移](<docs/research/modern-pack-formats.md#L200>) 是独立边界。代表性更旧源 `3015bd18b:client/net/minecraft/client/color/item/ItemColors.java:57` / `3015bd18b:client/net/minecraft/world/item/SpawnEggItem.java:127` 和 `7d9ca125f:client/net/minecraft/client/color/item/ItemColors.java:70` / `7d9ca125f:client/net/minecraft/world/item/SpawnEggItem.java:126` 是运行时颜色表；鸡、苦力怕、猪与 52 样本一致（两个 ref 的 `client/net/minecraft/world/item/Items.java:1094,1097,1124`、`client/net/minecraft/world/item/Items.java:1210,1213,1240`）。不能据此复制 52 的整表给任意早期包。后续 [独立 items atlas](<docs/research/modern-pack-formats.md#L204>) 或渲染改版不由此证明，须按源版/目标版分别核对。 |
+| **更早、更晚或未证实的包型** | [既有研究的 44–46 入口迁移](<modern-pack-formats.md#L200>) 是独立边界。代表性更旧源 `3015bd18b:client/net/minecraft/client/color/item/ItemColors.java:57` / `3015bd18b:client/net/minecraft/world/item/SpawnEggItem.java:127` 和 `7d9ca125f:client/net/minecraft/client/color/item/ItemColors.java:70` / `7d9ca125f:client/net/minecraft/world/item/SpawnEggItem.java:126` 是运行时颜色表；鸡、苦力怕、猪与 52 样本一致（两个 ref 的 `client/net/minecraft/world/item/Items.java:1094,1097,1124`、`client/net/minecraft/world/item/Items.java:1210,1213,1240`）。不能据此复制 52 的整表给任意早期包。后续 [独立 items atlas](<modern-pack-formats.md#L204>) 或渲染改版不由此证明，须按源版/目标版分别核对。 |
 
 **建议先验收** 46/52 已知原版语义且双输入已定位、无有效自定义 shader/atlas/model 冲突的纯静态覆盖包；按原版层结构保留颜色与几何，已有目标文件优先，对输入缺失和冲突诊断。单图只作为明确接受正/背面近似的可选路径；没改旧蛋的包用新原版默认。
 
@@ -78,7 +78,7 @@ python -B build/viarp-spawn-egg-audit/fetch_official.py
 python -B build/viarp-spawn-egg-audit/audit.py
 ```
 
-[下载校验脚本](<build/viarp-spawn-egg-audit/fetch_official.py>) 仅用 [Mojang 公开版本清单](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) 与官方 CDN；[静态审计脚本](<build/viarp-spawn-egg-audit/audit.py>) 重验 SHA-1，遍历 81 套布局、侧车缺席、透明掩码、侧 span、示例颜色及 CPU 合成；详见 [本次输出](<build/viarp-spawn-egg-audit/audit.txt>)。审计目录由 Git 忽略；未运行共享 Gradle、未启动客户端、未读取真实凭据、未做 GPU 测试。
+[下载校验脚本](<../../build/viarp-spawn-egg-audit/fetch_official.py>) 仅用 [Mojang 公开版本清单](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) 与官方 CDN；[静态审计脚本](<../../build/viarp-spawn-egg-audit/audit.py>) 重验 SHA-1，遍历 81 套布局、侧车缺席、透明掩码、侧 span、示例颜色及 CPU 合成；详见 [本次输出](<../../build/viarp-spawn-egg-audit/audit.txt>)。审计目录由 Git 忽略；未运行共享 Gradle、未启动客户端、未读取真实凭据、未做 GPU 测试。
 
 ## 已实现的保真子集
 
