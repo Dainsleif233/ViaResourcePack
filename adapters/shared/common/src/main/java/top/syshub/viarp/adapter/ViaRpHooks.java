@@ -57,6 +57,16 @@ public final class ViaRpHooks {
         }
     }
 
+    /** 只有主包源和现有升级缓存都匹配时，才可清除旧版确认标记。 */
+    public static boolean hasConvertedLocalPack(Path vanillaPackDirectory, String packId) {
+        try {
+            return ConversionService.get().hasConvertedLocalPack(vanillaPackDirectory, packId);
+        } catch (RuntimeException failure) {
+            logAndIgnore(packId, failure);
+            return false;
+        }
+    }
+
     /** {@link #localPack(Path)} 的 {@link File} 版本（1.19.2 及更早的 hook 用）。 */
     public static File localPack(File source) {
         try {

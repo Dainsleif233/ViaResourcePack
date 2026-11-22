@@ -262,13 +262,9 @@ public final class ConversionService {
                 return source;
             }
             // 只复用已有产物，不在浏览时启动转换。原版用同一份产物决定兼容性并保留原条目 ID。
-            boolean zip = Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS);
-            if (cache.hasCandidate(zip, zip ? Files.size(source) : -1L, target, ResourcePackUpgrader.RULES_VERSION)) {
-                prepareOnce();
-                Path cached = cache.lookup(PathIo.sha1(source), zip, target, ResourcePackUpgrader.RULES_VERSION);
-                if (cached != null) {
-                    return cached;
-                }
+            Path cached = lookupLocalCache(source, target);
+            if (cached != null) {
+                return cached;
             }
             // 没有缓存的旧纹理包仍用占位通过原版发现，等玩家启用才转换。
             return pack.isLegacyTexturePack() ? placeholder.create(source, target) : source;
@@ -276,6 +272,46 @@ public final class ConversionService {
             reportFailureOnce(source, e);
             return source;
         }
+    }
+
+    /** 启动选包时证明本地包确实有当前兼容的升级产物；不转换、不创建占位。 */
+    public boolean hasConvertedLocalPack(Path vanillaPackDirectory, String packId) {
+        if (!config.enabled() || !config.convertLocalPacks() || vanillaPackDirectory == null
+                || packId == null || !packId.startsWith("file/")) {
+            return false;
+        }
+        String name = packId.substring(5);
+        if (name.isEmpty() || name.indexOf('/') >= 0 || name.indexOf((char) 92) >= 0
+                || ".".equals(name) || "..".equals(name)) {
+            return false;
+        }
+        try {
+            Path configuredDirectory = paths.resourcePacksDir();
+            if (!configuredDirectory.equals(vanillaPackDirectory.toAbsolutePath().normalize())) {
+                return false;
+            }
+            Path source = configuredDirectory.resolve(name);
+            if (!paths.isInResourcePacksDir(source) || paths.isOwnOutput(source)) {
+                return false;
+            }
+            PackFormat target = GameVersion.current().packFormat();
+            PackInput pack = inspect(source);
+            return pack != null && pack.canUpgradeTo(target) && ResourcePackUpgrader.canUpgrade(pack.format(), target)
+                    && lookupLocalCache(source, target) != null;
+        } catch (IOException | RuntimeException e) {
+            // 无法验证就保留原版标记和选包行为。
+            ViaRpLog.debug("Could not verify the converted resource pack {} at startup", packId, e);
+            return false;
+        }
+    }
+
+    private Path lookupLocalCache(Path source, PackFormat target) throws IOException {
+        boolean zip = Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS);
+        if (!cache.hasCandidate(zip, zip ? Files.size(source) : -1L, target, ResourcePackUpgrader.RULES_VERSION)) {
+            return null;
+        }
+        prepareOnce();
+        return cache.lookup(PathIo.sha1(source), zip, target, ResourcePackUpgrader.RULES_VERSION);
     }
 
     /**

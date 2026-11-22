@@ -17,20 +17,51 @@
  */
 package top.syshub.viarp.adapter.mixin.reload;
 
+import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
+import net.minecraft.server.packs.repository.Pack;
+import net.minecraft.server.packs.repository.PackRepository;
+import net.minecraft.server.packs.repository.PackSource;
 
 import top.syshub.viarp.adapter.LocalPackReload;
+import top.syshub.viarp.adapter.ViaRpHooks;
 
-/** 拦截选项保存资源包选择时触发的重载。 */
+/** 连接原版选包确认和启动时的资源包选择。 */
 @Mixin(Options.class)
 public class OptionsReloadMixin {
+
+    @Shadow protected Minecraft minecraft;
+    @Shadow public List<String> resourcePacks;
+    @Shadow public List<String> incompatibleResourcePacks;
+
+    @Inject(method = "loadSelectedResourcePacks(Lnet/minecraft/server/packs/repository/PackRepository;)V",
+            at = @At("HEAD"))
+    private void viarp$keepConvertedPacksSelected(PackRepository repository, CallbackInfo ci) {
+        Path packDirectory = this.minecraft.getResourcePackDirectory();
+        this.incompatibleResourcePacks.removeIf(id -> {
+            if (!this.resourcePacks.contains(id)) {
+                return false;
+            }
+            Pack pack = repository.getPack(id);
+            if (pack == null && !id.startsWith("file/")) {
+                pack = repository.getPack("file/" + id);
+            }
+            // 原版遇到已兼容的旧标记会清理它，但也跳过该包一次。只提前清理本模组的产物。
+            return pack != null && pack.getPackSource() == PackSource.DEFAULT && pack.getCompatibility().isCompatible()
+                    && ViaRpHooks.hasConvertedLocalPack(packDirectory, pack.getId());
+        });
+    }
 
     @Redirect(
             method = "updateResourcePacks(Lnet/minecraft/server/packs/repository/PackRepository;)V",
