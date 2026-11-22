@@ -214,7 +214,7 @@ ZIP 产物按路径排序且时间戳固定；目录仍输出为目录。同一�
 - 校验任务：
   - `checkArchitecture`：扫描 core 的 class 常量池，禁止出现 `net/minecraft/` 与 `com/mojang/`（白名单 `net/fabricmc/api/`、`net/fabricmc/loader/api/`）。
   - `validateAdapterMatrix`：矩阵 ↔ 磁盘目录一致性 + 模拟 Loader 选择。
-  - `verifyUniversalJar`：嵌套 jar 数量、`depends` 完整性、每个适配器恰好声明 2 个 mixin 且对应 class 存在。
+  - `verifyUniversalJar`：嵌套 jar 数量、`depends` 完整性、每个适配器恰好声明 2 个 mixin 且对应 class 存在，并排除旧转换库及其打包依赖。`build` 同时安排 `universal` 和此校验；单独调用时只检查当前产物，不重新打包。
 - `universal`：core jar + 7 个嵌套适配器 → `build/libs/ViaResourcePack-<version>.jar`。
 
 不依赖 Fabric API：只用 fabric-loader（`FabricLoader.getGameDir()` + `ClientModInitializer`）、minecraft 与 mixin。

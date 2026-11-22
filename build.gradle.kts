@@ -410,6 +410,7 @@ val validateAdapterMatrix = tasks.register("validateAdapterMatrix") {
 
 tasks.build {
     dependsOn(universal)
+    dependsOn(verifyUniversalJar)
     dependsOn(checkArchitecture)
     dependsOn(validateAdapterMatrix)
 }
