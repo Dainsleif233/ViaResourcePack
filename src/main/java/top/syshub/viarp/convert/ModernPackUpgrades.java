@@ -75,7 +75,7 @@ final class ModernPackUpgrades {
             }
             ItemAtlasSplitDiagnostics.inspect(workspace);
         } else if (major == 83 && minor == 0) {
-            inspectItemModels(workspace, true);
+            SpecialItemTransforms.apply(workspace);
         } else if ((major == 86 && minor <= 1) || (major == 87 && minor == 0)) {
             EntitySheetUpgrades.apply(entered, workspace);
         } else if (major == 88 && minor == 0) {
@@ -92,7 +92,7 @@ final class ModernPackUpgrades {
         } else if (major == 94 && minor == 0) {
             migrateEquipmentTrimOverrides(workspace);
         } else if (major == 95 && minor == 0) {
-            inspectItemModels(workspace, false);
+            inspectLegacyMapTints(workspace);
         } else if (major == 97 && minor == 0) {
             migrateExplorerMaps(workspace);
         }
@@ -396,25 +396,23 @@ final class ModernPackUpgrades {
         return changed;
     }
 
-    private static void inspectItemModels(UpgradeWorkspace workspace, boolean specialTransforms) throws IOException {
+    private static void inspectLegacyMapTints(UpgradeWorkspace workspace) throws IOException {
         for (String file : workspace.files()) {
             if (!isItemDefinition(file)) {
                 continue;
             }
             for (Map<String, Object> node : itemNodes(readObject(workspace, file))) {
-                String type = vanillaPath(JsonAccess.string(node, "type", ""));
-                if (specialTransforms && "special".equals(type) && !node.containsKey("transformation")) {
-                    workspace.warn("83.0: retained special item model in " + file
-                            + "; check pose/scale against the target renderer before adding a transformation.");
-                } else if (!specialTransforms && "model".equals(type)) {
-                    List<Object> tints = JsonAccess.array(node, "tints");
-                    if (tints != null) {
-                        for (Object tint : tints) {
-                            if ("map_color".equals(vanillaPath(JsonAccess.string(object(tint), "type", "")))) {
-                                workspace.warn("95.0: retained removed map_color tint in " + file
-                                        + "; dynamic map tints cannot be replaced by a constant without changing behavior.");
-                            }
-                        }
+                if (!"model".equals(vanillaPath(JsonAccess.string(node, "type", "")))) {
+                    continue;
+                }
+                List<Object> tints = JsonAccess.array(node, "tints");
+                if (tints == null) {
+                    continue;
+                }
+                for (Object tint : tints) {
+                    if ("map_color".equals(vanillaPath(JsonAccess.string(object(tint), "type", "")))) {
+                        workspace.warn("95.0: retained removed map_color tint in " + file
+                                + "; dynamic map tints cannot be replaced by a constant without changing behavior.");
                     }
                 }
             }
