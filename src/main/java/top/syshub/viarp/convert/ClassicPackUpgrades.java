@@ -44,6 +44,9 @@ import top.syshub.viarp.pack.PackFormat;
 final class ClassicPackUpgrades {
 
     private static final String VANILLA = "assets/minecraft/";
+    private static final String REALMS_CHECKMARK = "assets/realms/textures/gui/realms/checkmark.png";
+    private static final String GUI_CHECKMARK = VANILLA + "textures/gui/checkmark.png";
+    private static final String GUI_CHECKMARK_SPRITE = VANILLA + "textures/gui/sprites/icon/checkmark.png";
     private static final String BLOCK_ATLAS = VANILLA + "atlases/blocks.json";
     private static final String FLAT_TEXTURE_TABLE = "/viarp/migrations/classic/format-4-textures.tsv";
     // 这些别名另以原版模型或语言记录确认，不能用图像同一性筛掉正式版的重绘。
@@ -95,7 +98,8 @@ final class ClassicPackUpgrades {
                 break;
             case 7:
                 renameDirtPath(workspace);
-                copySquidTexture(workspace);
+                // 早期格式 7 仍读取旧路径；正式 1.17 只换了路径，保留两端的读取位置。
+                copyTexture(workspace, 7, VANILLA + "textures/entity/squid.png", VANILLA + "textures/entity/squid/squid.png");
                 break;
             case 8:
                 warnFile(workspace, 8, VANILLA + "textures/gui/container/inventory.png", "新版窄布局药效图块需要作者补画");
@@ -106,6 +110,7 @@ final class ClassicPackUpgrades {
             case 11:
                 // 旧资源适配层被移除；再次提示依赖旧 UV 的资源，不能宣称仍由游戏代为修复。
                 warnOldEntityLayouts(workspace, 11);
+                copyTexture(workspace, 11, REALMS_CHECKMARK, GUI_CHECKMARK);
                 break;
             case 12:
                 upgradeAtlas(workspace);
@@ -122,6 +127,7 @@ final class ClassicPackUpgrades {
                 warnFile(workspace, 15, VANILLA + "texts/credits.json", "旧版 credits 的 titles 层级及页面呈现需核对 disciplines");
                 break;
             case 16:
+                copyTexture(workspace, 16, GUI_CHECKMARK, GUI_CHECKMARK_SPRITE);
                 IntermediatePackUpgrades.splitGuiAtlas(workspace);
                 break;
             default:
@@ -573,23 +579,25 @@ final class ClassicPackUpgrades {
         warnFile(workspace, 7, VANILLA + "textures/entity/zombie/drowned_outer_layer.png", "新版溺尸外层手臂镜像 UV 已变");
     }
 
-    private static void copySquidTexture(UpgradeWorkspace workspace) throws IOException {
-        String source = VANILLA + "textures/entity/squid.png";
+    /** 原版消费者换址；保留旧路径及其扩展引用，不覆盖显式目标。 */
+    private static void copyTexture(UpgradeWorkspace workspace, int format, String source, String target) throws IOException {
         if (!workspace.hasFile(source)) {
             return;
         }
-        // 早期格式 7 仍读取旧路径；正式 1.17 只换了路径，保留两端的读取位置。
-        String target = VANILLA + "textures/entity/squid/squid.png";
-        Set<String> existing = foldedFiles(workspace.files());
+        List<String> files = workspace.files();
+        if (!files.contains(source)) {
+            return;
+        }
+        Set<String> existing = foldedFiles(files);
         if (existing.contains(target) || existing.contains(target + ".mcmeta")
                 || Files.exists(workspace.path(target)) || Files.exists(workspace.path(target + ".mcmeta"))) {
-            warn(workspace, 7, source, "普通鱿鱼的新纹理或侧车已存在，不覆盖 " + target);
+            warn(workspace, format, source, "新纹理或侧车已存在，不覆盖 " + target);
             return;
         }
         Path destination = workspace.path(target);
         Files.createDirectories(destination.getParent());
         Files.copy(workspace.path(source), destination);
-        if (workspace.hasFile(source + ".mcmeta")) {
+        if (files.contains(source + ".mcmeta")) {
             Files.copy(workspace.path(source + ".mcmeta"), workspace.path(target + ".mcmeta"));
         }
     }
