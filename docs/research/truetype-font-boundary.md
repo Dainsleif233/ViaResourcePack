@@ -4,7 +4,7 @@
 
 ## 首见及资源证据
 
-本地 vanilla 证据取自 `D:/Code/jsucraft/MC` 的 Git 历史。资源格式看 `client/net/minecraft/DetectedVersion.java:43–48`；不要与数据包格式混用。以 `client/com/mojang/blaze3d/font/TrueTypeGlyphProvider.java` 的 Git blob 校验实现是否相同：旧 `bc30553555766bb133eccf26c054b700715c159f`，新 `c765e099b96a896b57a3d6e5f80663957093816e`。
+本地 vanilla 证据取自 `<minecraft-reference>` 的 Git 历史。资源格式看 `client/net/minecraft/DetectedVersion.java:43–48`；不要与数据包格式混用。以 `client/com/mojang/blaze3d/font/TrueTypeGlyphProvider.java` 的 Git blob 校验实现是否相同：旧 `bc30553555766bb133eccf26c054b700715c159f`，新 `c765e099b96a896b57a3d6e5f80663957093816e`。
 
 | 版本 | Git 提交 | 资源格式 | TTF 观察 |
 | --- | --- | ---: | --- |
@@ -16,7 +16,7 @@
 
 [24w03a 官方公告](https://www.minecraft.net/en-us/article/minecraft-snapshot-24w03a)确认 shift 原来应用两次、size 改按 EM、基线固定为 7。公告建议试 `size: 9`，**不是默认值改成 9**。两端 `ttf` 均要求 `file`（读作 `assets/<namespace>/font/<path>`），都可省略 `size: 11.0`、`oversample: 1.0`、`shift: [0,0]`、`skip: ""`；`skip` 仍可用字符串或字符串列表。见 `client/net/minecraft/client/gui/font/providers/TrueTypeGlyphProviderDefinition.java`，旧 `b0080f518:42–70,98–107`、新 `07a9fef3a:47–81,109–119`。格式 24 仍是两个 `Codec.FLOAT`，没有独立 shift 数值范围；[1.20.5 正式公告](https://www.minecraft.net/en-us/article/minecraft-java-edition-1-20-5)里的 `[-512,512]` 是后来变化：同文件 `13379a666:105–108`（1.20.5-pre2）先加 `[-100,100]`，`456a7ba27:105–108`（1.20.5-pre4）再放宽，不能回填到 24。
 
-官方交叉核验：按版本清单、版本 JSON、asset index 的 SHA-1 与可用声明长度校验下级制品，再实算 SHA-256。JAR 根 `version.json` 分别报 `{resource:22,data:27}` / `{resource:24,data:28}`。版本清单的 LWJGL 依赖中，前者有 `lwjgl-stb:3.3.2`；后者新增 `lwjgl-freetype:3.3.2` 且保留 STB（仍有其他用途）。这确认 Java binding 版本，不宣称已经识别每个平台的 native 构建。两端各有 7 个 JAR 内 `assets/*/font/**` 文件，逐项摘要相同且无 `ttf` provider；共用同一 asset index（ID 12）与两个 indexed 字体条目（`include/unifont.json` 和其 `unifont.zip`），也相同。这说明没有可直接照抄移植法的 vanilla 自带 TTF 素材；**不能**由字体资源相同推出自定义 TTF 语义相同。细目见[静态审计结果](<../../build/viarp-truetype-audit/mojang-assets.json>)。
+官方交叉核验：按版本清单、版本 JSON、asset index 的 SHA-1 与可用声明长度校验下级制品，再实算 SHA-256。JAR 根 `version.json` 分别报 `{resource:22,data:27}` / `{resource:24,data:28}`。版本清单的 LWJGL 依赖中，前者有 `lwjgl-stb:3.3.2`；后者新增 `lwjgl-freetype:3.3.2` 且保留 STB（仍有其他用途）。这确认 Java binding 版本，不宣称已经识别每个平台的 native 构建。两端各有 7 个 JAR 内 `assets/*/font/**` 文件，逐项摘要相同且无 `ttf` provider；共用同一 asset index（ID 12）与两个 indexed 字体条目（`include/unifont.json` 和其 `unifont.zip`），也相同。这说明没有可直接照抄移植法的 vanilla 自带 TTF 素材；**不能**由字体资源相同推出自定义 TTF 语义相同。复验步骤见下文。
 
 | 客户端 | 官方 SHA-1 | 实算 SHA-256 |
 | --- | --- | --- |
@@ -102,12 +102,11 @@ sy' ≈ 2*sy + A*S/(A-D) - 10
 
 ## 复验
 
-```bash
-git -C D:/Code/jsucraft/MC log --format='%h %p %s' -12 07a9fef3a
-git -C D:/Code/jsucraft/MC diff b0080f518 07a9fef3a -- client/net/minecraft/DetectedVersion.java client/com/mojang/blaze3d/font client/net/minecraft/client/gui/font
-git -C D:/Code/jsucraft/MC log --format='%h %s' b0080f518..ac39e1ebb -- client/com/mojang/blaze3d/font/TrueTypeGlyphProvider.java client/net/minecraft/client/gui/font/providers/TrueTypeGlyphProviderDefinition.java
-python -I -B build/viarp-truetype-audit/metrics.py
-python -I -B build/viarp-truetype-audit/mojang-assets.py
-```
+将 `MC_REFERENCE` 设为本地 Minecraft 参考仓库路径：
 
-[样例脚本](<../../build/viarp-truetype-audit/metrics.py>)用分数自检并记录槽位，[样例输出](<../../build/viarp-truetype-audit/metrics.txt>)可直接对照。[静态审计脚本](<../../build/viarp-truetype-audit/mojang-assets.py>)只访问 Mojang 公开静态分发端点，校验制品后在内存读 ZIP 目录和所需资源，不执行制品，也不接触账号或游戏服务。未跑 Gradle；未改 Java。
+~~~bash
+git -C "$MC_REFERENCE" diff b0080f518 07a9fef3a -- client/net/minecraft/DetectedVersion.java client/com/mojang/blaze3d/font client/net/minecraft/client/gui/font
+git -C "$MC_REFERENCE" log --format='%h %s' b0080f518..ac39e1ebb -- client/com/mojang/blaze3d/font/TrueTypeGlyphProvider.java client/net/minecraft/client/gui/font/providers/TrueTypeGlyphProviderDefinition.java
+~~~
+
+按上表 Mojang 元数据取得制品、核验 SHA-1 和长度。直接比较两个 JAR 的字体资源、版本元数据的 LWJGL 模块及 asset index 12。度量反例可用有理数代入上文公式复算；这些检查不要求执行 Minecraft。

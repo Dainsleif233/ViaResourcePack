@@ -4,7 +4,7 @@
 
 ## 1. 原日志的时间线与字节证据
 
-证据源：[现场 latest.log](<D:/Softwares/MCJE/.minecraft/versions/26.3-Fabric_0.19.5/logs/latest.log>)。按字节 LF 分行（1 起计），下列 offset 从 0 起计；非 ASCII 与控制字节用 `\xNN`，保留混用 CRLF/LF，不对整份日志套用某个编码。显示的包名来自磁盘文件名。探针只输出白名单中的资源包/GLSL 行，不打开账户、启动器用户配置或选包配置。
+证据源：26.3 / Fabric Loader 0.19.5 实例的 `logs/latest.log`（本地记录，不随仓库分发）。按字节 LF 分行（1 起计），offset 从 0 起计；非 ASCII 与控制字节用 `\xNN`。日志和资源包样本不公开，下文保留复核所需的格式、资源路径和摘要。
 
 | 原行号 | 证据 |
 | --- | --- |
@@ -27,7 +27,7 @@
 
 ## 2. 提供者与排除范围
 
-只检查 8 个目前可见的本地原包文件/目录及 8 个 ViaResourcePack 缓存的索引、根元数据和目标条目；读出的是路径、大小、指令类型/ID、行号和 SHA-256，没有导出包或 GLSL。缓存完整键为 v2-0e107ddf338712aa5f48846a7d116a44e5529f2b-zip-97-1-658a957f04a8a191cc2a27109db3af3175e0f86b90ae8d3cde2979b40f12eb18（[现场缓存](<D:/Softwares/MCJE/.minecraft/versions/26.3-Fabric_0.19.5/resourcepacks/.viaresourcepack/cache/v2-0e107ddf338712aa5f48846a7d116a44e5529f2b-zip-97-1-658a957f04a8a191cc2a27109db3af3175e0f86b90ae8d3cde2979b40f12eb18/pack.zip>)；[真实原包](<D:/Softwares/MCJE/.minecraft/versions/26.3-Fabric_0.19.5/resourcepacks/驱魔传_材质.zip>)）。源包 pack_format=42，缓存 min_format=max_format=[97,1]，均无声明 overlay/filter。**新包元数据不等于新 shader ABI。**
+只检查 8 个目前可见的本地原包文件/目录及 8 个 ViaResourcePack 缓存的索引、根元数据和目标条目；读出的是路径、大小、指令类型/ID、行号和 SHA-256，没有导出包或 GLSL。缓存完整键为 v2-0e107ddf338712aa5f48846a7d116a44e5529f2b-zip-97-1-658a957f04a8a191cc2a27109db3af3175e0f86b90ae8d3cde2979b40f12eb18。源包 pack_format=42，缓存 min_format=max_format=[97,1]，均无声明 overlay/filter。**新包元数据不等于新 shader ABI。**
 
 | 包内路径 | 长度 | 原包与缓存共同 SHA-256 | 行指纹 |
 | --- | ---: | --- | --- |
@@ -40,27 +40,19 @@
 
 ## 3. 92→93 边界与修法
 
-本地 Mojang 对照根为 [MC](<D:/Code/jsucraft/MC>)；提交 e79868855（Snapshot 4，92.0）、3a325c395（Snapshot 5，93.0）、634debadb（26.3，97.1）的 version.json:7–9 已复核。见 [现代着色器边界](<./modern-shader-boundaries.md#L23-L37>)。
+本地 Mojang 对照根为 `<minecraft-reference>`；提交 e79868855（Snapshot 4，92.0）、3a325c395（Snapshot 5，93.0）、634debadb（26.3，97.1）的 version.json:7–9 已复核。见 [现代着色器边界](<./modern-shader-boundaries.md#L23-L37>)。
 
 - 92.0 把 #moj_import 交 Mojang 预处理器；角括号绝对 ID 走 shaders/include/，引号按旧规则从引用者目录起算；还有 stage 内去重和 #version 合并（e79868855:client/net/minecraft/client/renderer/ShaderManager.java:105–140、e79868855:client/com/mojang/blaze3d/preprocessor/GlslPreprocessor.java:23–94）。93.0 的 ShaderManager 不再展开旧指令，共用 ShaderC：OpenGL 也先生成 SPIR-V、再转回 GLSL。这就是现场虽为 OpenGL，仍出现 Vulkan GLSL 限制文字的原因，不是选错显卡后端（3a325c395:client/net/minecraft/client/renderer/ShaderManager.java:86–107,121–123、3a325c395:client/com/mojang/renderpearl/frontend/shaders/PipelineBuilder.java:76,102、3a325c395:client/com/mojang/renderpearl/backend/opengl/GlPipelineRecompiler.java:198–221）。
 - 93.0 和 97.1 的回调按请求字符串解析 ID；不是按引入者目录解析，也不据 quote/angle 类型切换路径（3a325c395:client/com/mojang/renderpearl/frontend/shaders/GlslCompiler.java:44–60,96–114；634debadb:client/com/mojang/renderpearl/frontend/shaders/GlslCompiler.java:47–71、634debadb:client/net/minecraft/client/renderer/ShaderManager.java:71–74,172–173）。**本包这个特例**的旧尖括号 ID 正好可映射到同名原版文件，但 26.3 发行客户端的 include/fog.glsl:4–11,24–40 定义的是 Fog block、total_fog_value、fog_spherical_distance、fog_cylindrical_distance，并不定义旧 fog_distance/FogShape 契约。
 - **不要做全局字符串替换、任意插位置编号、自动改 uniform 或删除所有 shader。** 本例即使 import 成功，仍需目标 GLSL 版本/扩展、两阶段显式且链接一致的 ABI，以及目标 pipeline 认识的 UBO/绑定，后者还检查跨阶段/绑定类型（634debadb:client/com/mojang/renderpearl/frontend/shaders/PipelineBuilder.java:110–179,192–236,305–334）。不能从旧源码机械推出旧雾表现和私有效果在新运行时的等价实现。
-- **保真需要作者人工移植**：以 [26.3 官方客户端](<D:/Softwares/MCJE/.minecraft/versions/26.3-Fabric_0.19.5/26.3-Fabric_0.19.5.jar>) 的同名入口为 ABI 基线。VSH Position/UV0 的位置为 0/1，传递 sphericalVertexDistance/cylindricalVertexDistance/texCoord0 到 FSH 的位置为 0/1/2；FSH fragColor 输出位置 0，采样器绑定 Sampler0。使用官方 Projection（ProjMat）、DynamicTransforms（ModelViewMat/TextureMat/ColorModulator）、Fog（两套距离范围）、Globals（GlintAlpha/GameTime）块，转换自定义计算而不是把每个旧 uniform 独立塞进任意块；保留 GLSL 330 + GL_ARB_separate_shader_objects 或经过目标验证的等价头。以上只确定移植起点，不声称视觉效果等价；需要另用隔离的 26.3 实例验证编译、链接、绑定及实际 OpenGL/Vulkan 绘制。
+- **保真需要作者人工移植**：以 [26.3 官方客户端](https://piston-data.mojang.com/v1/objects/e877b6a07acd633fb3bb475002175cec036e7b87/client.jar) 的同名入口为 ABI 基线。VSH Position/UV0 的位置为 0/1，传递 sphericalVertexDistance/cylindricalVertexDistance/texCoord0 到 FSH 的位置为 0/1/2；FSH fragColor 输出位置 0，采样器绑定 Sampler0。使用官方 Projection（ProjMat）、DynamicTransforms（ModelViewMat/TextureMat/ColorModulator）、Fog（两套距离范围）、Globals（GlintAlpha/GameTime）块，转换自定义计算而不是把每个旧 uniform 独立塞进任意块；保留 GLSL 330 + GL_ARB_separate_shader_objects 或经过目标验证的等价头。以上只确定移植起点，不声称视觉效果等价；需要另用隔离的 26.3 实例验证编译、链接、绑定及实际 OpenGL/Vulkan 绘制。
 - **已支持的非保真处理**：在授权的隔离副本里同时移除这两个精确路径的覆盖（包括若存在的生效 overlay），不移除整个包、不改变打包校验、不改原缓存，也不需要更动其他着色器或纹理。以当前已检查的包栈为前提，两个资源重新命中 26.3 原版；探针确认原版两阶段各自能编译，未重载游戏验证全部包或画面。仅去掉 VSH 会暴露旧 FSH 的同类错误；仅去掉 FSH 仍保留现场失败的 VSH。立即止血可在游戏中禁用提供包，代价是它的其他资源一并禁用。自动转换器宜维持**保留 + 精确诊断**，不把这种降级冒充保真升级。
 
-## 4. 可复现探针
+## 4. 复验方法
 
-调试程序保存在专用构建目录（Git 忽略，清理构建产物前请保留探针源码）：[日志字节探针](<../../build/viarp-latest-shader/inspect_log.mjs>)、[资源包只读探针](<../../build/viarp-latest-shader/inspect_packs.py>)、[ShaderC 对照](<../../build/viarp-latest-shader/GlintShadercProbe.java>)。从 ViaResourcePack 根用 Git Bash、Node 26.12.1、Python 3.13.12、JDK 25.0.4.1 运行：
-
-~~~bash
-B='D:/Softwares/MCJE/.minecraft/versions/26.3-Fabric_0.19.5'
-L='D:/Softwares/MCJE/.minecraft/libraries/org/lwjgl'
-P='D:/Code/jsucraft/Mods/ViaResourcePack/build/viarp-latest-shader'
-CP="$L/lwjgl/3.4.3/lwjgl-3.4.3.jar;$L/lwjgl/3.4.3/lwjgl-3.4.3-natives-windows.jar;$L/lwjgl-shaderc/3.4.3/lwjgl-shaderc-3.4.3.jar;$L/lwjgl-shaderc/3.4.3/lwjgl-shaderc-3.4.3-natives-windows.jar"
-node "$P/inspect_log.mjs" "$B/logs/latest.log"
-python "$P/inspect_packs.py" "$B"
-java --enable-native-access=ALL-UNNAMED -Dorg.lwjgl.system.SharedLibraryExtractPath="$P/native" --class-path "$CP" "$P/GlintShadercProbe.java" "$B/26.3-Fabric_0.19.5.jar"
-~~~
+1. 在 `<gameDir>/logs/latest.log` 定位第一条 shader 编译错误，记录游戏格式、渲染后端和阶段路径。
+2. 用只读 ZIP/目录检查，比较原包与其转换缓存中的 `assets/minecraft/shaders/core/glint.vsh`、`glint.fsh` 的大小及 SHA-256；先确认实际生效的覆盖层，勿用文件名猜提供者。
+3. 用同一目标版本的 LWJGL ShaderC 分别编译代表性旧阶段、只改导入指令的对照、按新布局编写的最小对照，以及原版同名阶段。比较退出状态与诊断，不把单阶段编译当作完整管线或画面验收。
 
 - 包探针对 ZIP 先限制数量、布局与声明大小、不写出条目，并把精选读取额外限制到 256 KiB；读取到 EOF 校验大小/CRC，发生坏头错误即停止该包。不运行生产解包，不绕开坏包或放宽转换限制。
 - Java 探针用实际 LWJGL 3.4.3 ShaderC（Vulkan 1.2 SPIR-V、auto-bind、无 auto-location，按 97.1 前端选项），只编译手写合成 GLSL 及原版 jar 的选定条目。只在构建目录创建 native 库缓存；没有启动客户端或读取真实包 GLSL 到编译器。它验证 *stage 编译* 的错误，不是对完整 RenderPearl pipeline/binding 或像素等价性的验证。

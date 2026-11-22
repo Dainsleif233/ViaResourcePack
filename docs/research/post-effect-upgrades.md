@@ -4,7 +4,7 @@
 
 ## 证据来源
 
-本机 Minecraft 源码历史以 `D:/Code/jsucraft/MC` 为 Git 根，历史目录为 `client/`。按 [官方版本清单](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) 定位各客户端，用元数据中的 SHA-1 核对下载，再从 jar 提取 `assets/minecraft/{post_effect,shaders/post,shaders/include}`。下文用 Git 历史复核相同资源如何被解析和装载。
+本机 Minecraft 源码历史以 `<minecraft-reference>` 为 Git 根，历史目录为 `client/`。按 [官方版本清单](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) 定位各客户端，用元数据中的 SHA-1 核对下载，再从 jar 提取 `assets/minecraft/{post_effect,shaders/post,shaders/include}`。下文用 Git 历史复核相同资源如何被解析和装载。
 
 | 格式 | 快照与源码提交 | 官方客户端 SHA-1 |
 |---|---|---|

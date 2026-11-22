@@ -9,7 +9,7 @@
 | 24w33a，资源 35 | [版本 JSON](https://piston-meta.mojang.com/v1/packages/f8c6aff027e4aee548e04893f97ef3f040c83cbc/24w33a.json) · [客户端 JAR](https://piston-data.mojang.com/v1/objects/376d3cee0b5043b11163dfac67f0a6197c3e97bc/client.jar) · `376d3cee0b5043b11163dfac67f0a6197c3e97bc` | `03d2adcb88eb48f98080c301f3a77e7e993dec91` |
 | 24w34a，资源 36 | [版本 JSON](https://piston-meta.mojang.com/v1/packages/592285c7bc4954b46aef5e3956f562c66180c818/24w34a.json) · [客户端 JAR](https://piston-data.mojang.com/v1/objects/f252db3368f588fa8c946dcbeed712bfe109e816/client.jar) · `f252db3368f588fa8c946dcbeed712bfe109e816` | `03f39551638e20d6e93211a6902d9f6fc686e645` |
 
-SHA-1 按 Mojang 版本 JSON 的 `downloads.client.sha1` 核对，资源格式按 JAR 内 `version.json` 核对；末列是本地 `D:/Code/jsucraft/MC` 中对应的客户端源码提交。以下文中的 35／36 源码行号均针对这些快照，而非提交后的新版。
+SHA-1 按 Mojang 版本 JSON 的 `downloads.client.sha1` 核对，资源格式按 JAR 内 `version.json` 核对；末列是本地 `<minecraft-reference>` 中对应的客户端源码提交。以下文中的 35／36 源码行号均针对这些快照，而非提交后的新版。
 
 - 两个原版链的内容都从 `assets/minecraft/shaders/post/<id>.json` 移到 `assets/minecraft/post_effect/<id>.json`；逐 pass 对比，仅将裸 `name` 换成 `program: minecraft:post/<name>`，目标、采样及 uniform 数组不变。35 的 `GameRenderer.java:337`、`LevelRenderer.java:235` 使用旧路径；36 的 `GameRenderer.java:176–187,462–468`、`LevelRenderer.java:146,494–496` 使用效果 ID，`ShaderManager.java:68–71,85–111,164–182` 映射到新资源目录。链原路径在 36 是同名**程序** JSON 的路径，不能仅复制、保留旧链。
 - 35 的 `EffectInstance.java:51,72–81,151–162` 在 `shaders/program/` 查找裸程序名和阶段。36 的 `PostChainConfig.java:64–68` 解码 `program` 和同形 uniform 数组，`PostChain.java:74–87` 用 `POSITION` 顶点格式／空 defines 链接程序；程序与阶段改查 `shaders/post/` 下的资源。两个快照中的 `blit.vsh`、`blit.fsh`、`invert.fsh`、`sobel.vsh`、`entity_sobel.fsh`、`blur.vsh`、`entity_outline_box_blur.fsh`，按上述旧、新目录逐文件比较均逐字节相等。

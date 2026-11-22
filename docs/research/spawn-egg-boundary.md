@@ -4,7 +4,7 @@
 
 ## 1. 快照边界与制品
 
-[既有格式研究](<modern-pack-formats.md#L60-L69>) 的 52/53 ref 与本地 `D:/Code/jsucraft/MC` 对应；该研究原把蛋改动列在 [47–55 窗口](<modern-pack-formats.md#L201>)。[Mojang 25w08a 公告](https://www.minecraft.net/en-us/article/minecraft-snapshot-25w08a) 同时声明资源格式 53、重画新蛋和移除旧两图。按官方版本清单校验 profile SHA-1，再按 profile 校验客户端 JAR SHA-1 与大小；实际格式读 JAR 的 `version.json`，与各 ref 的 `client/net/minecraft/DetectedVersion.java:47–48` 相符。
+[既有格式研究](<modern-pack-formats.md#L60-L69>) 的 52/53 ref 与本地 `<minecraft-reference>` 对应；该研究原把蛋改动列在 [47–55 窗口](<modern-pack-formats.md#L201>)。[Mojang 25w08a 公告](https://www.minecraft.net/en-us/article/minecraft-snapshot-25w08a) 同时声明资源格式 53、重画新蛋和移除旧两图。按官方版本清单校验 profile SHA-1，再按 profile 校验客户端 JAR SHA-1 与大小；实际格式读 JAR 的 `version.json`，与各 ref 的 `client/net/minecraft/DetectedVersion.java:47–48` 相符。
 
 | 客户端 | MC ref / resource / data | Profile SHA-1 | 客户端 JAR SHA-1；字节 |
 | --- | --- | --- | --- |
@@ -71,14 +71,7 @@ chosen → per channel round(chosen.rgb * tint[chosen_layer].rgb / 255), A=255
 
 ## 5. 复算
 
-在仓库根目录，Python 3.13 + Pillow 11.3.0：
-
-```sh
-python -B build/viarp-spawn-egg-audit/fetch_official.py
-python -B build/viarp-spawn-egg-audit/audit.py
-```
-
-[下载校验脚本](<../../build/viarp-spawn-egg-audit/fetch_official.py>) 仅用 [Mojang 公开版本清单](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) 与官方 CDN；[静态审计脚本](<../../build/viarp-spawn-egg-audit/audit.py>) 重验 SHA-1，遍历 81 套布局、侧车缺席、透明掩码、侧 span、示例颜色及 CPU 合成；详见 [本次输出](<../../build/viarp-spawn-egg-audit/audit.txt>)。审计目录由 Git 忽略；未运行共享 Gradle、未启动客户端、未读取真实凭据、未做 GPU 测试。
+从 [Mojang 公开版本清单](https://piston-meta.mojang.com/mc/game/version_manifest_v2.json) 取得上表客户端版本的元数据与 JAR，对照已列 SHA-1。用 Python 3.13 和 Pillow 11.3.0 读取样本；按原路径核对 81 套入口、颜色、侧车以及 PNG 透明掩码和非透明像素跨度；按上方混色公式在 CPU 复算，不运行游戏或假定 GPU 输出。
 
 ## 已实现的保真子集
 

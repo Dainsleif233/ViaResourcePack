@@ -2,7 +2,7 @@
 
 ## 原版行为
 
-下面的提交与行号来自本地反编译源码仓库 `D:/Code/jsucraft/MC`，可用 `git show <commit>:<path>` 核对。
+下面的提交与行号来自本地反编译源码仓库 `<minecraft-reference>`，可用 `git show <commit>:<path>` 核对。
 
 | 结论 | 源码 |
 | --- | --- |

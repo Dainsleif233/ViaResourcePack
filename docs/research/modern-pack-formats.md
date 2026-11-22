@@ -14,12 +14,14 @@
 
 ## 证据和复验方式
 
-本地引用仓库 `D:/Code/jsucraft/MC`；截至 `da28c03af`（26.4 Snapshot 10），默认工作树当前另有提交，不用它作锚点。表格取该提交的 first-parent 主线，另加 26.1.2 分支 `315aeb702`；不包含愚人节分支或根提交以前版本。到 25w32a，版本 JSON 未提交，取各 ref 中 `client/net/minecraft/DetectedVersion.java` 的内建版本，关键版本用官方说明交叉验证；25w33a 起取 `version.json` 的 `pack_version.resource_major/resource_minor`，绝非同文件的 `data_major/data_minor`。仓库不含 `assets/` 资产树、PNG/GLSL；`data/` 是数据包，不能作为替代。有发布说明和加载器证据时同时引用。下文 `ref:path:行` 指 Git blob 原行号；只核对可见行为，没有执行引用代码或复制反编译实现。
+本地引用仓库 `<minecraft-reference>`；截至 `da28c03af`（26.4 Snapshot 10），默认工作树当前另有提交，不用它作锚点。表格取该提交的 first-parent 主线，另加 26.1.2 分支 `315aeb702`；不包含愚人节分支或根提交以前版本。到 25w32a，版本 JSON 未提交，取各 ref 中 `client/net/minecraft/DetectedVersion.java` 的内建版本，关键版本用官方说明交叉验证；25w33a 起取 `version.json` 的 `pack_version.resource_major/resource_minor`，绝非同文件的 `data_major/data_minor`。仓库不含 `assets/` 资产树、PNG/GLSL；`data/` 是数据包，不能作为替代。有发布说明和加载器证据时同时引用。下文 `ref:path:行` 指 Git blob 原行号；只核对可见行为，没有执行引用代码或复制反编译实现。
+
+将 `MC_REFERENCE` 设为本地 Minecraft 参考仓库路径：
 
 ~~~sh
-git -C D:/Code/jsucraft/MC log --first-parent --reverse --format='%h %s' da28c03af
-git -C D:/Code/jsucraft/MC show 634debadb:version.json
-git -C D:/Code/jsucraft/MC show da28c03af:client/net/minecraft/server/packs/metadata/pack/PackFormat.java | nl -ba
+git -C "$MC_REFERENCE" log --first-parent --reverse --format='%h %s' da28c03af
+git -C "$MC_REFERENCE" show 634debadb:version.json
+git -C "$MC_REFERENCE" show da28c03af:client/net/minecraft/server/packs/metadata/pack/PackFormat.java | nl -ba
 ~~~
 
 ## 格式目录

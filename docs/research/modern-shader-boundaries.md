@@ -2,7 +2,7 @@
 
 ViaResourcePack 2.0 只向上迁移，本文目标为 26.3 正式版（97.1）。**保留自定义 GLSL，不按旧名搬到新入口，也不自动改写 import 或分配 location**：这两处都不只是语法或文件名变化。本文仅讨论 shader 源与 pipeline；旧后处理 JSON 见 [后处理资源的有限迁移](<../../docs/research/post-effect-upgrades.md>)。
 
-证据基线：本地 Minecraft Git 根为 `D:/Code/jsucraft/MC`，以下各提交的 `version.json` 核实了 26.1（84.0，`097c9cc6f`）、26.2 Snapshot 1（85.0，`1d3d3caa1`）、26.3 Snapshot 4（92.0，`e79868855`）、Snapshot 5（93.0，`3a325c395`）和 26.3（97.1，`634debadb`）。Git 引用以 `提交:路径:行号` 标记；可用 `git show <提交>:<路径>` 复核。主要证据为 Mojang 发布说明和这些提交的加载器、编译器与 pipeline；未启动客户端或编译 GLSL，不把 pipeline 注册当作用户包实际渲染成功的证据。
+证据基线：本地 Minecraft Git 根为 `<minecraft-reference>`，以下各提交的 `version.json` 核实了 26.1（84.0，`097c9cc6f`）、26.2 Snapshot 1（85.0，`1d3d3caa1`）、26.3 Snapshot 4（92.0，`e79868855`）、Snapshot 5（93.0，`3a325c395`）和 26.3（97.1，`634debadb`）。Git 引用以 `提交:路径:行号` 标记；可用 `git show <提交>:<路径>` 复核。主要证据为 Mojang 发布说明和这些提交的加载器、编译器与 pipeline；未启动客户端或编译 GLSL，不把 pipeline 注册当作用户包实际渲染成功的证据。
 
 ## 84.0 → 85.0：六条旧程序收敛到两个入口
 

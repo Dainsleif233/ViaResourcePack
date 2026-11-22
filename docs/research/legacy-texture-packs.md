@@ -29,7 +29,7 @@
 
 ## 2. 图集、索引与未分配像素
 
-**静态证据。** 用户提供的 [unstitcher.jar](<D:/Downloads/unstitcher.jar>) 13,352 字节，SHA-256 `2382b48482d5370390b82b843f1dce02cdc28a0a02202718caa62e78d8640e7d`。REA 清单 `ev_1002ba686695dc469abb233808fefe3d4fc57ee02ff95623b5977271fb1e5210`，成员视图 `ev_4ea1fdb287deec2c57af9cc92d4ed7ed6b387104c6ea16ac8d833d38c48c6400`；字节码由 JDK `javap -p -c -s -classpath D:/Downloads/unstitcher.jar net.minecraft.util.Unstitcher net.minecraft.util.gui.UnstitcherGui` 静态取得。归档里的 `blocks.txt`（**219** 命名格、37 未分配）和 `items.txt`（**196** 命名格、60 未分配）均无重复坐标和输出名，坐标每轴 0–15；不是所有早期游戏版本的语义表。
+**静态证据。** 用户提供的 `unstitcher.jar` 13,352 字节，SHA-256 `2382b48482d5370390b82b843f1dce02cdc28a0a02202718caa62e78d8640e7d`。REA 清单 `ev_1002ba686695dc469abb233808fefe3d4fc57ee02ff95623b5977271fb1e5210`，成员视图 `ev_4ea1fdb287deec2c57af9cc92d4ed7ed6b387104c6ea16ac8d833d38c48c6400`；字节码由 JDK `javap -p -c -s -classpath <unstitcher.jar> net.minecraft.util.Unstitcher net.minecraft.util.gui.UnstitcherGui` 静态取得。归档里的 `blocks.txt`（**219** 命名格、37 未分配）和 `items.txt`（**196** 命名格、60 未分配）均无重复坐标和输出名，坐标每轴 0–15；不是所有早期游戏版本的语义表。
 
 - `Unstitcher.loadPositions` 偏移 22–86：每行 `x,y - name`，0 起算，行优先 `i=x+16*y`。`load` 偏移 8–40、`unstitch(OutputStream)` 偏移 26–51：固定每轴 **16 个格**，单格 `tw=W/16`、`th=H/16`（旧工具整数除法），原点 `((i % 16)*tw, (i / 16)*th)`。256² 得 16²，512² 得 32²；不缩放或插值。
 - `UnstitcherGui.unstitch(File, File)` 偏移 67–169/184–248：不拆的条目保留旧路径。流重载偏移 54–166：无名字跳过，两个图集分别输出 `textures/blocks/<name>.png`、`textures/items/<name>.png`。少量证据锚点：terrain (1,0)→`stone`，(2,0)→`dirt`；items (10,0)→`apple`，(6,3)→`compass`，(6,4)→`clock`。后两者的单格不是后期的整组帧。
@@ -72,7 +72,7 @@
 | 16×64 PNG 与两行 `0,1*3` / `0,2*2`；已确认的钟/指南针空 TXT；再测负数、0 ticks、越界 4、溢出、孤立 TXT 及既有合法侧车 | 播放序列为 `[(0,1),(1,3),(0,1),(2,2)]`（索引、ticks），仅已核验空 TXT 写空 animation；坏条目不会产出坏侧车。 |
 | 用验证过摘要的官方归档作本地核对，只断言边界、路径和像素差统计 | 不向仓库提交官方 JAR、全图或导出的切片；测试预期不从实现规则自我生成。 |
 
-先交付高置信检测、最小无损裁图、格式 1 的显式路径和动画，再扩版本档案与坐标。拒绝越界/重复规范路径/符号链接，限制输入图像和 ZIP 解码预算；输出独立新包，确定性写入，缓存键包括规则/档案版本。遵守 [AGENTS.md](<../../AGENTS.md#L62-L101>) 的 Java 8、纯 core、路径替换与两个 mixin。**尚未完成验证：** alpha/beta 的完整格占用和重用矩阵、每个过渡快照、旧运行时程序化动画/渲染行为、模组私有格式、格式 1→现代各步规则。本报告不是通盘兼容声明；不能仅改 `pack_format` 就标记后续格式的资产已迁移。
+先交付高置信检测、最小无损裁图、格式 1 的显式路径和动画，再扩版本档案与坐标。拒绝越界/重复规范路径/符号链接，限制输入图像和 ZIP 解码预算；输出独立新包，确定性写入，缓存键包括规则/档案版本。遵守 [AGENTS.md](../../AGENTS.md) 的 Java 8、纯 core 与路径替换约束。**尚未完成验证：** alpha/beta 的完整格占用和重用矩阵、每个过渡快照、旧运行时程序化动画/渲染行为、模组私有格式、格式 1→现代各步规则。本报告不是通盘兼容声明；不能仅改 `pack_format` 就标记后续格式的资产已迁移。
 
 ## 5. 首批 atlas 白名单：原版客户端独立证据
 

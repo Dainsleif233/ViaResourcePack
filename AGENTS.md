@@ -1,11 +1,11 @@
 # AGENTS.md
 
-本文件给 AI 编程助手与维护者快速上手用：构建、测试、架构约束、常见改动流程。
+本文件面向在仓库中工作的编码代理：先核对这些约束，再修改代码、验证和提交。
 设计细节与拦截点指纹以 [docs/DESIGN.md](docs/DESIGN.md) 为准，本文只收录「改代码时必须知道」的东西。
 
 ## 项目是什么
 
-Fabric 客户端 mod：加载资源包时自动把与当前 Minecraft 版本不匹配的资源包转换到当前版本。
+Fabric 客户端模组：只把符合条件的旧资源包升级到当前客户端格式。
 支持 **MC 1.14.4 – 26.3**，单个 universal jar 通用，**不依赖 Fabric API**（只用
 fabric-loader + minecraft + mixin）。
 
@@ -28,7 +28,7 @@ fabric-loader + minecraft + mixin）。
 |-----------------------------------|-------------------------------------------------------------------------------------|
 | `./gradlew build`                 | core + 全部适配器 + universal jar                                          |
 | `./gradlew universal`             | 只打包 universal jar                                                                |
-| `./gradlew verifyUniversalJar`    | 校验 universal 嵌套结构（8 个嵌套 jar、fabric.mod.json、每个适配器恰好 3 个 mixin） |
+| `./gradlew universal verifyUniversalJar` | 重新打包再校验 8 个嵌套 JAR、清单及每族 3 个 mixin（单独验包不重建） |
 | `./gradlew checkArchitecture`     | 扫描 core 常量池，禁止 `net/minecraft/`、`com/mojang/` 引用                         |
 | `./gradlew validateAdapterMatrix` | `adapters.toml` ↔ 磁盘一致性 + 模拟 Loader 选适配器                                 |
 | `./gradlew test`                 | core 单元测试 |
@@ -72,7 +72,8 @@ refer/             gitignore 的参考资料（原版资源包加载调用链）
    （后者限制平台 API，引用 MC 里的 record 时会报「找不到 java.lang.Record」）。
    写法上也保持 Java 8：不用 `var`、文本块、switch 表达式等新语法。
 3. **保持原版读取器**：发现与下载 hook 只替换 File/Path/List<IdAndPath>，不包装
-   `PackResources` / `Pack`。菜单 hook 只把保存后的重载交给后台准备桥，不拦截全局重载入口。
+   `PackResources` / `Pack`。菜单 hook 只把保存后的重载交给后台准备桥，不拦截全局重载入口；
+   启动 hook 只清理本模组有效转换缓存对应的旧不兼容标记，不增删已启用包或写原版配置。
 4. **每个适配器恰好 3 个 mixin**（本地路径、服务器路径和选包确认），验包检查矩阵声明的精确类集合。
 5. **mixin 源码只放在 `adapters/shared/{common,local/<hook>,server/<hook>,reloadHook/<hook>,reloadUi/<bridge>}`**，不在
    `adapters/mc/` 下复制；`fabric.mod.json` 与 `viarp-adapter-mc.mixins.json` 由
@@ -81,10 +82,9 @@ refer/             gitignore 的参考资料（原版资源包加载调用链）
    `buildSrc` 的 hook→mixin 映射都从它推导；绕开矩阵直接改这些会撞上
    `validateAdapterMatrix` 的校验。
 7. **转换只向上**：按发行的 `PackFormat` 节点迁移，保留 major/minor，目标严格高于源声明上界。
-   改变产物或源视图时更新 `ResourcePackUpgrader.RULES_VERSION`，避免沿用旧缓存。
-8. **本地包「安装时」转换**：只有 `options.txt` 的 `resourcePacks` 行里出现的包才转换
-   （`PackSelection` 判定）；缺少根元数据但可识别的旧纹理包走 `PackPlaceholder`
-   占位；更高格式的资源包保持原样。
+   改变产物、源视图或缓存报告时更新 `ResourcePackUpgrader.RULES_VERSION`，避免沿用旧缓存。
+8. **默认只转换已启用的本地包**（`PackSelection` 读 `options.txt`）；保留原 ID 和顺序。
+   未启用包只复用有效缓存，或给可识别且无根元数据的旧纹理包提供占位；更高格式保持原样。
 9. **服务器包下载去重**（仅 1.14.4 – 1.20.2）：`ServerPackShortcut` + 三个注入点
    （redirect `Pattern.matcher`、redirect `File.exists`、inject `checkHash`）。
    两个 `@Redirect` 的目标是 JDK 方法，与映射表无关；已确认全区间各恰好一次且顺序稳定，
@@ -104,10 +104,9 @@ refer/             gitignore 的参考资料（原版资源包加载调用链）
    `localHook`/`serverHook`/`reloadHook`/`reloadUi`）。
 2. 建 `adapters/mc/<version>/build.gradle.kts`，内容照抄现有族（apply 对应的 Loom 插件 +
    `viarp.mc.adapter`；`obfuscated = false` 的族用普通 `fabric-loom`）。
-3. 拦截点签名在新区间内变化时，新建 `adapters/shared/local/<新hook>` 或
-   `adapters/shared/server/<新hook>`，并在 `buildSrc/src/main/kotlin/viarp/build/AdapterMatrix.kt`
-   的 `LOCAL_MIXINS` / `SERVER_MIXINS` 映射里登记。
-4. 跑 `./gradlew validateAdapterMatrix` 与 `./gradlew verifyUniversalJar`，
+3. 拦截点签名变化时，在对应 `adapters/shared/` 子目录新增实现，并在 `AdapterMatrix.kt`
+   的对应映射中登记；复用签名相同的 hook，不复制适配器源码。
+4. 跑 `./gradlew validateAdapterMatrix universal verifyUniversalJar`，
    同步更新 `docs/DESIGN.md` §2 与（如有）嵌套 jar 期望数。
 
 ### 增加迁移规则
