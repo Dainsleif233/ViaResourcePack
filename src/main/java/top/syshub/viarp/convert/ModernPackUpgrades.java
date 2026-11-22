@@ -104,6 +104,9 @@ final class ModernPackUpgrades {
             migrateExplorerMaps(workspace, MAP_RENAMES_97);
         }
 
+        if (minor == 0 && (major == 85 || major == 93 || major == 96)) {
+            ShaderBoundaryDiagnostics.inspect(major, workspace);
+        }
         if ((major == 65 && minor == 0) || (major == 69 && minor == 0)
                 || (major == 75 && minor == 0) || (major == 84 && minor == 0)
                 || (major == 88 && minor == 0) || (major == 97 && minor == 1)) {
