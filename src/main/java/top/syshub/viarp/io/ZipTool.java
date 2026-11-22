@@ -33,10 +33,10 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Enumeration;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
+import java.util.Map;
 import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -47,6 +47,7 @@ public final class ZipTool {
 
     private static final int MAX_ENTRIES = 200_000;
     private static final int MAX_PATH_LENGTH = 1024;
+    private static final int MAX_PATH_NODES = 2 * MAX_ENTRIES;
     private static final long MAX_ENTRY_BYTES = 256L * 1024 * 1024;
     private static final long MAX_TOTAL_BYTES = 2L * 1024 * 1024 * 1024;
 
@@ -70,18 +71,19 @@ public final class ZipTool {
             if (file.size() > MAX_ENTRIES) {
                 throw new IOException("Too many ZIP entries: " + file.size());
             }
-            Set<String> names = new HashSet<String>();
+            ZipLayout layout = new ZipLayout();
+            Enumeration<? extends ZipEntry> declared = file.entries();
+            while (declared.hasMoreElements()) {
+                ZipEntry entry = declared.nextElement();
+                layout.add(root, relative(entry), entry.isDirectory());
+            }
             long total = 0;
             byte[] buffer = new byte[65536];
             Enumeration<? extends ZipEntry> entries = file.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 String name = entry.getName();
-                String relative = entry.isDirectory() ? name.substring(0, name.length() - 1) : name;
-                Path out = entryPath(root, relative);
-                if (!names.add(relative.toLowerCase(Locale.ROOT))) {
-                    throw new IOException("Duplicate ZIP entry: " + name);
-                }
+                Path out = root.resolve(relative(entry));
                 if (entry.isDirectory()) {
                     Files.createDirectories(out);
                     continue;
@@ -114,22 +116,66 @@ public final class ZipTool {
         }
     }
 
-    private static Path entryPath(Path root, String relative) throws IOException {
-        if (relative.length() > MAX_PATH_LENGTH || relative.indexOf('\\') >= 0 || relative.indexOf(':') >= 0) {
-            throw new IOException("Invalid ZIP entry path: " + relative);
-        }
-        Path result = root;
-        for (String part : relative.split("/", -1)) {
-            if (part.isEmpty() || ".".equals(part) || "..".equals(part)
-                    || part.endsWith(".") || part.endsWith(" ")) {
+    private static String relative(ZipEntry entry) {
+        String name = entry.getName();
+        return entry.isDirectory() ? name.substring(0, name.length() - 1) : name;
+    }
+
+    /** 在开始写入前检查完整布局，包括 ZIP 中没有单独条目的隐含父目录。 */
+    private static final class ZipLayout {
+        private final ZipNode root = new ZipNode("", true);
+        private int remaining = MAX_PATH_NODES;
+
+        void add(Path destination, String relative, boolean isDirectory) throws IOException {
+            if (relative.length() > MAX_PATH_LENGTH || relative.indexOf('\\') >= 0 || relative.indexOf(':') >= 0) {
                 throw new IOException("Invalid ZIP entry path: " + relative);
             }
-            result = result.resolve(part);
+            String[] segments = relative.split("/", -1);
+            ZipNode node = root;
+            for (int i = 0; i < segments.length; i++) {
+                String part = segments[i];
+                if (part.isEmpty() || ".".equals(part) || "..".equals(part)
+                        || part.endsWith(".") || part.endsWith(" ")) {
+                    throw new IOException("Invalid ZIP entry path: " + relative);
+                }
+                boolean directory = isDirectory || i < segments.length - 1;
+                if (node.children == null) {
+                    node.children = new HashMap<String, ZipNode>();
+                }
+                String key = part.toLowerCase(Locale.ROOT);
+                ZipNode child = node.children.get(key);
+                if (child == null) {
+                    if (remaining-- <= 0) {
+                        throw new IOException("Too many distinct ZIP paths and implicit directories");
+                    }
+                    child = new ZipNode(part, directory);
+                    node.children.put(key, child);
+                } else if (!child.spelling.equals(part) || child.directory != directory) {
+                    throw new IOException("Conflicting ZIP entry path: " + relative);
+                }
+                node = child;
+            }
+            if (node.listed) {
+                throw new IOException("Duplicate ZIP entry: " + relative);
+            }
+            node.listed = true;
+            // 还要让当前平台解析一次，例如 Windows 下不能使用某些字符。
+            if (!destination.resolve(relative).startsWith(destination)) {
+                throw new IOException("ZIP entry escapes the target directory: " + relative);
+            }
         }
-        if (!result.startsWith(root)) {
-            throw new IOException("ZIP entry escapes the target directory: " + relative);
+    }
+
+    private static final class ZipNode {
+        private final String spelling;
+        private final boolean directory;
+        private boolean listed;
+        private Map<String, ZipNode> children;
+
+        ZipNode(String spelling, boolean directory) {
+            this.spelling = spelling;
+            this.directory = directory;
         }
-        return result;
     }
 
     /**
