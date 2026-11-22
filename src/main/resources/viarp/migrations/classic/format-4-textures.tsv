@@ -7,6 +7,7 @@
 # 原有条目为同名 PNG 或可明确确认的木板/羊毛/唱片/草地/弓钓竿等对应项；
 # 1.12.2 的 PNG blob 与 1.13/1.14.4 之一相同，并验证目标路径存在于 1.14.4。
 # atlas 补齐项另以 Mojang 官方客户端的 PNG 与模型消费槽核对；见 docs/research/atlas-format-4-paths.md。
+# 原版重绘的少数方块按注册与实用纹理槽确认身份；见 docs/research/legacy-atlas-semantic.md。
 # 旧纹理 ID	新纹理 ID（minecraft 命名空间；PNG 与侧车使用同一规则）
 # 格式 4 原版方块模型的纹理槽与 1.12.2→1.13 像素一致；见 docs/research/classic-model-overrides.md。
 blocks/stone_granite	block/granite
@@ -24,6 +25,7 @@ blocks/bone_block_top	block/bone_block_top
 blocks/bookshelf	block/bookshelf
 blocks/brewing_stand	block/brewing_stand
 blocks/brewing_stand_base	block/brewing_stand_base
+blocks/brick	block/bricks
 blocks/cactus_bottom	block/cactus_bottom
 blocks/cactus_side	block/cactus_side
 blocks/cactus_top	block/cactus_top
@@ -47,6 +49,7 @@ blocks/coal_block	block/coal_block
 blocks/coal_ore	block/coal_ore
 blocks/coarse_dirt	block/coarse_dirt
 blocks/cobblestone	block/cobblestone
+blocks/cobblestone_mossy	block/mossy_cobblestone
 blocks/command_block_back	block/command_block_back
 blocks/command_block_conditional	block/command_block_conditional
 blocks/command_block_front	block/command_block_front
@@ -134,6 +137,7 @@ blocks/log_oak	block/oak_log
 blocks/magma	block/magma
 blocks/melon_side	block/melon_side
 blocks/melon_top	block/melon_top
+blocks/mob_spawner	block/spawner
 blocks/mushroom_block_inside	block/mushroom_block_inside
 blocks/mushroom_brown	block/brown_mushroom
 blocks/mushroom_red	block/red_mushroom

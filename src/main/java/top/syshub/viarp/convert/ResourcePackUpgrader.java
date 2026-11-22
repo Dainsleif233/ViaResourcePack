@@ -31,7 +31,7 @@ import top.syshub.viarp.pack.PackMetadata;
 final class ResourcePackUpgrader {
 
     // 产物、源视图或缓存内诊断有变化时递增；不得重用旧规则的结果。
-    static final String RULES_VERSION = "builtin-21";
+    static final String RULES_VERSION = "builtin-22";
 
     private ResourcePackUpgrader() {
     }
