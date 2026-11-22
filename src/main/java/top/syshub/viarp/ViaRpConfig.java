@@ -28,7 +28,6 @@ import java.util.Map;
 
 import top.syshub.viarp.io.PathIo;
 import top.syshub.viarp.json.Json;
-import top.syshub.viarp.json.JsonAccess;
 
 /**
  * 配置（默认 {@code <gameDir>/config/viaresourcepack/config.json}，显式覆盖时随数据根移动）。
@@ -46,21 +45,19 @@ public final class ViaRpConfig {
     private final boolean convertLocalPacks;
     private final boolean convertServerPacks;
     private final boolean onlyConvertEnabledPacks;
-    private final long maxCacheBytes;
     private final boolean verbose;
 
     private ViaRpConfig(boolean enabled, boolean convertLocalPacks, boolean convertServerPacks,
-                        boolean onlyConvertEnabledPacks, long maxCacheBytes, boolean verbose) {
+                        boolean onlyConvertEnabledPacks, boolean verbose) {
         this.enabled = enabled;
         this.convertLocalPacks = convertLocalPacks;
         this.convertServerPacks = convertServerPacks;
         this.onlyConvertEnabledPacks = onlyConvertEnabledPacks;
-        this.maxCacheBytes = maxCacheBytes;
         this.verbose = verbose;
     }
 
     private static ViaRpConfig defaults() {
-        return new ViaRpConfig(true, true, true, true, 4L * 1024 * 1024 * 1024, false);
+        return new ViaRpConfig(true, true, true, true, false);
     }
 
     public static ViaRpConfig get() {
@@ -104,7 +101,6 @@ public final class ViaRpConfig {
                     bool(root, "convertLocalPacks", defaults.convertLocalPacks),
                     bool(root, "convertServerPacks", defaults.convertServerPacks),
                     bool(root, "onlyConvertEnabledPacks", defaults.onlyConvertEnabledPacks),
-                    megabytesToBytes(JsonAccess.integer(root, "maxCacheMegabytes", 4096), defaults.maxCacheBytes),
                     bool(root, "verbose", defaults.verbose));
         } catch (IOException e) {
             ViaRpLog.warn("Malformed {}; using defaults", file, e);
@@ -138,11 +134,6 @@ public final class ViaRpConfig {
         return onlyConvertEnabledPacks;
     }
 
-    /** 缓存目录的上限（字节）；超出后按 LRU 裁剪。 */
-    public long maxCacheBytes() {
-        return maxCacheBytes;
-    }
-
     /** 打开转换库自身的详细日志。 */
     public boolean verbose() {
         return verbose;
@@ -154,7 +145,6 @@ public final class ViaRpConfig {
         root.put("convertLocalPacks", Boolean.valueOf(convertLocalPacks));
         root.put("convertServerPacks", Boolean.valueOf(convertServerPacks));
         root.put("onlyConvertEnabledPacks", Boolean.valueOf(onlyConvertEnabledPacks));
-        root.put("maxCacheMegabytes", Long.valueOf(maxCacheBytes / (1024 * 1024)));
         root.put("verbose", Boolean.valueOf(verbose));
         return Json.write(root);
     }
@@ -162,12 +152,5 @@ public final class ViaRpConfig {
     private static boolean bool(Map<String, Object> root, String key, boolean fallback) {
         Object value = root.get(key);
         return value instanceof Boolean ? ((Boolean) value).booleanValue() : fallback;
-    }
-
-    private static long megabytesToBytes(int megabytes, long fallback) {
-        if (megabytes <= 0) {
-            return fallback;
-        }
-        return (long) megabytes * 1024L * 1024L;
     }
 }

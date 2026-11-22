@@ -114,7 +114,7 @@ public final class ConversionService {
                     ViaRpPaths paths = ViaRpPaths.get();
                     ViaRpConfig config = ViaRpConfig.get();
                     existing = new ConversionService(paths, config,
-                            new ConversionCache(paths.cacheDir(), config.maxCacheBytes()),
+                            new ConversionCache(paths.cacheDir()),
                             new PackSelection(paths.optionsFile()));
                     instance = existing;
                 }

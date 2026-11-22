@@ -58,12 +58,12 @@ public final class ConversionCache {
     private static final String DIR_PAYLOAD = "pack";
     private static final int MAX_PACK_METADATA_BYTES = 4 * 1024 * 1024;
 
-    private final Path cacheDir;
-    private final long maxBytes;
+    private static final long CACHE_BUDGET_BYTES = 4L * 1024 * 1024 * 1024;
 
-    public ConversionCache(Path cacheDir, long maxBytes) {
+    private final Path cacheDir;
+
+    public ConversionCache(Path cacheDir) {
         this.cacheDir = cacheDir;
-        this.maxBytes = maxBytes;
     }
 
     /** rulesVersion 必须随转换引擎或其他影响产物的规则变化。 */
@@ -227,13 +227,13 @@ public final class ConversionCache {
     }
 
     /**
-     * 把缓存裁剪到 {@link #maxBytes} 以内，按 {@code createdAt} 从旧到新淘汰。
+     * 把缓存裁剪到 {@link #CACHE_BUDGET_BYTES} 以内，按 {@code createdAt} 从旧到新淘汰。
      *
      * <p>刻意用 createdAt 而不是文件访问时间：很多文件系统默认关闭 atime 更新，
      * 拿不到可靠的「最后使用」时间。
      */
     public void prune() {
-        if (maxBytes <= 0 || !Files.isDirectory(cacheDir)) {
+        if (!Files.isDirectory(cacheDir)) {
             return;
         }
         List<Candidate> candidates = new ArrayList<Candidate>();
@@ -266,7 +266,7 @@ public final class ConversionCache {
             total += size;
         }
 
-        if (total <= maxBytes) {
+        if (total <= CACHE_BUDGET_BYTES) {
             return;
         }
 
@@ -279,7 +279,7 @@ public final class ConversionCache {
 
         long freed = 0;
         for (Candidate candidate : candidates) {
-            if (total - freed <= maxBytes) {
+            if (total - freed <= CACHE_BUDGET_BYTES) {
                 break;
             }
             PathIo.deleteQuietly(candidate.dir);
